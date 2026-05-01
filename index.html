@@ -100,6 +100,21 @@
         <!-- Quick insight -->
         <div id="quick-insight" class="insight-card hidden"></div>
 
+        <!-- Saved this month chip -->
+        <div id="saved-chip" class="sav-chip hidden" data-nav="savings">
+          <div class="sav-chip-left">
+            <span class="sav-chip-emoji">💰</span>
+            <div>
+              <div class="muted small">Saved this month</div>
+              <div class="sav-chip-amt bold">0</div>
+            </div>
+          </div>
+          <div class="sav-chip-right">
+            <span class="sav-chip-meta muted small">0 entries</span>
+            <span class="arrow">›</span>
+          </div>
+        </div>
+
         <!-- Donut + categories -->
         <div class="card">
           <div class="card-head">
@@ -130,6 +145,49 @@
       </header>
       <div class="content">
         <div id="insights-list"></div>
+      </div>
+    </section>
+
+    <!-- SAVINGS -->
+    <section class="screen hidden" data-screen="savings">
+      <header class="topbar">
+        <div>
+          <p class="topbar-eyebrow">Set aside</p>
+          <h1 class="topbar-title">Savings</h1>
+        </div>
+      </header>
+      <div class="content">
+        <div class="hero card sav-hero">
+          <div class="hero-head">
+            <span class="muted">Saved this month</span>
+            <span class="hero-pct" id="sav-pct"></span>
+          </div>
+          <div class="hero-amount" id="sav-month-total">0</div>
+          <div class="hero-allowance" id="sav-month-target">No monthly target set</div>
+          <div class="progress">
+            <div class="progress-fill" id="sav-progress"></div>
+          </div>
+          <div class="hero-foot">
+            <div>
+              <p class="muted small">All-time total</p>
+              <p class="bold" id="sav-all-total">0</p>
+            </div>
+            <div>
+              <p class="muted small">Goals</p>
+              <p class="bold" id="sav-goal-count">0</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="sav-suggestion" class="insight-card good hidden"></div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Goals</h2>
+            <button class="ghost-btn" id="add-goal">+ Add goal</button>
+          </div>
+          <ul class="goal-list" id="goal-list"></ul>
+        </div>
       </div>
     </section>
 
@@ -211,6 +269,10 @@
       <button class="tab active" data-nav="home">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 3l9 8h-3v9h-4v-6h-4v6H6v-9H3z"/></svg>
         <span>Home</span>
+      </button>
+      <button class="tab" data-nav="savings">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19.83 7.5l-2.27-2.27c.07-.42.18-.81.32-1.18C16.4 4.05 14.5 5 13 6.5c-.39.39-.74.81-1.05 1.27C11.32 7.59 10.66 7.5 10 7.5c-3.31 0-6 2.69-6 6 0 1.66.67 3.16 1.76 4.24L4 19.5l1.5 1.5 1.76-1.76c1.08 1.09 2.58 1.76 4.24 1.76 3.31 0 6-2.69 6-6 0-.66-.09-1.32-.27-1.95.46-.31.88-.66 1.27-1.05 1.5-1.5 2.45-3.4 2.45-5.61.0-.37.07-.85.18-1.39zM10 19.5c-3.31 0-6-2.69-6-6 0-3.31 2.69-6 6-6 .79 0 1.55.16 2.24.44C11.45 8.96 11 10.43 11 12s.45 3.04 1.24 4.06C11.55 16.34 10.79 16.5 10 16.5z"/></svg>
+        <span>Savings</span>
       </button>
       <button class="tab" data-nav="insights">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M4 20h3v-7H4v7zm6.5 0h3V4h-3v16zM17 20h3v-11h-3v11z"/></svg>
@@ -308,6 +370,93 @@
         </div>
 
         <button class="danger-btn block" id="cat-delete">Delete category</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Savings entry sheet -->
+  <div id="sav-sheet" class="sheet hidden">
+    <div class="sheet-backdrop"></div>
+    <div class="sheet-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2 id="sav-sheet-title" class="serif">Add savings</h2>
+        <button class="icon-btn-sm" id="sav-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18.3 5.71L17 4.4 12 9.4 7 4.4 5.7 5.71 10.7 10.71 5.7 15.71 7 17.02 12 12.02 17 17.02 18.3 15.71 13.3 10.71z"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <div class="amount-big">
+          <span class="amount-prefix-big" id="sav-prefix">₹</span>
+          <input type="number" inputmode="decimal" id="sav-amount" placeholder="0" />
+        </div>
+
+        <label class="field-label">Goal</label>
+        <div class="cat-grid" id="sav-goals"></div>
+
+        <label class="field-label">Note (optional)</label>
+        <input type="text" id="sav-note" placeholder="e.g. salary set-aside" class="text-input" />
+
+        <div class="date-time-row">
+          <div>
+            <label class="field-label">Date</label>
+            <input type="date" id="sav-date" class="text-input" />
+          </div>
+          <div>
+            <label class="field-label">Time</label>
+            <input type="time" id="sav-time" class="text-input" />
+          </div>
+        </div>
+
+        <div class="sheet-actions">
+          <button class="ghost-btn block" id="sav-cancel">Cancel</button>
+          <button class="primary-btn" id="sav-sheet-save">Add</button>
+        </div>
+
+        <button class="danger-btn block hidden" id="sav-delete">Delete entry</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Goal editor sheet -->
+  <div id="goal-sheet" class="sheet hidden">
+    <div class="sheet-backdrop"></div>
+    <div class="sheet-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2 id="goal-sheet-title" class="serif">Edit goal</h2>
+        <button class="icon-btn-sm" id="goal-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18.3 5.71L17 4.4 12 9.4 7 4.4 5.7 5.71 10.7 10.71 5.7 15.71 7 17.02 12 12.02 17 17.02 18.3 15.71 13.3 10.71z"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <label class="field-label">Name</label>
+        <input type="text" id="goal-name" class="text-input" placeholder="e.g. Emergency Fund" />
+
+        <label class="field-label">Emoji</label>
+        <input type="text" id="goal-emoji" class="text-input" placeholder="💰" maxlength="4" />
+
+        <label class="field-label">Color</label>
+        <div class="color-row" id="goal-colors"></div>
+
+        <label class="field-label">Monthly target (optional)</label>
+        <div class="amount-input slim full">
+          <span class="amount-prefix" id="goal-prefix-1">₹</span>
+          <input type="number" inputmode="decimal" id="goal-monthly" placeholder="0" />
+        </div>
+
+        <label class="field-label">Total goal target (optional)</label>
+        <div class="amount-input slim full">
+          <span class="amount-prefix" id="goal-prefix-2">₹</span>
+          <input type="number" inputmode="decimal" id="goal-target" placeholder="0" />
+        </div>
+
+        <div class="sheet-actions">
+          <button class="ghost-btn block" id="goal-cancel">Cancel</button>
+          <button class="primary-btn" id="goal-sheet-save">Save</button>
+        </div>
+
+        <button class="danger-btn block hidden" id="goal-edit-delete">Delete goal</button>
       </div>
     </div>
   </div>
