@@ -746,3 +746,22 @@ input[type="number"] { -moz-appearance: textfield; }
 .goal-expand .sub-row .sn { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%; }
 
 .amount-input.slim.full { max-width: none; flex: 1; }
+
+/* ---------- Withdraw styling ---------- */
+.goal-expand-actions .ghost-btn.withdraw { color: var(--bad); }
+.goal-expand .sub-row.withdraw .sn,
+.goal-expand .sub-row.withdraw span:last-child { color: var(--bad); }
+
+.sheet.withdraw-mode .sav-source-seg .seg-btn.active,
+.sheet.withdraw-mode .sav-kind-seg .seg-btn.active[data-kind="withdraw"] {
+  background: rgba(251,113,133,0.18);
+  color: var(--bad);
+  border: 1px solid rgba(251,113,133,0.35);
+  box-shadow: none;
+}
+.sheet.withdraw-mode .amount-prefix-big,
+.sheet.withdraw-mode .amount-big input { color: var(--bad); }
+.sheet.withdraw-mode .primary-btn {
+  background: var(--bad);
+  color: white;
+}

@@ -145,7 +145,7 @@
     expandedGoal: null,
     sheet: { mode: null, expense: null, catId: null, subId: null },
     catSheet: { mode: null, cat: null, color: null },
-    savSheet: { mode: null, entry: null, goalId: null, source: 'extra' },
+    savSheet: { mode: null, entry: null, goalId: null, source: 'extra', kind: 'deposit' },
     goalSheet: { mode: null, goal: null },
   };
 
@@ -211,6 +211,10 @@
     return state.savings.filter(s => s.goalId === goalId);
   }
   function sumAmounts(arr) { return arr.reduce((a, b) => a + (b.amount || 0), 0); }
+  function signedAmount(s) {
+    return (s.kind === 'withdraw') ? -(s.amount || 0) : (s.amount || 0);
+  }
+  function sumNet(arr) { return arr.reduce((a, s) => a + signedAmount(s), 0); }
 
   // -------------------- Initialization --------------------
   async function init() {
@@ -337,16 +341,29 @@
     const exps = expensesForMonth(k);
     const total = sumAmounts(exps);
     const monthSavs = savingsForMonth(k);
-    const savedThisMonth = sumAmounts(monthSavs);
-    const savedFromAllowance = sumAmounts(monthSavs.filter(s => s.source === 'allowance'));
+    const savedThisMonth = sumNet(monthSavs);
+    const savedFromAllowance = sumNet(monthSavs.filter(s => s.source === 'allowance'));
     const allowance = state.allowance || 0;
     const pct = allowance > 0 ? Math.min(100, (total / allowance) * 100) : 0;
     const today = new Date();
     const dim = daysInMonth(k);
     const elapsed = today.getDate();
     const daysLeft = Math.max(0, dim - elapsed);
-    const remaining = Math.max(0, allowance - total - savedFromAllowance);
+    const remaining = Math.max(0, allowance - total - Math.max(0, savedFromAllowance));
     const pace = daysLeft > 0 ? remaining / daysLeft : 0;
+
+    // Build augmented item list: expense categories + synthetic Savings
+    const items = aggregateByCategory(exps);
+    const fromAllowanceClamped = Math.max(0, savedFromAllowance);
+    if (fromAllowanceClamped > 0) {
+      items.push({
+        cat: { id: '__savings__', name: 'Savings', emoji: '💰', color: '#c5fb45' },
+        amount: fromAllowanceClamped,
+        isSavings: true,
+      });
+      items.sort((a, b) => b.amount - a.amount);
+    }
+    const used = total + fromAllowanceClamped;
 
     $('#month-name').textContent = monthLabel(k);
     $('#hero-spent').textContent = fmtMoney(total);
@@ -358,18 +375,18 @@
     $('#hero-pace').textContent = `${fmtMoney(pace)}/day`;
     $('#hero-days').textContent = daysLeft;
     $('#total-tx').textContent = `${exps.length} transaction${exps.length === 1 ? '' : 's'}`;
-    $('#donut-total').textContent = fmtMoney(total);
+    $('#donut-total').textContent = fmtMoney(used);
 
     renderQuickInsight(exps, total, allowance, elapsed, dim);
     renderSavedChip(monthSavs, savedFromAllowance);
-    renderDonut(exps, total);
-    renderCatList(exps, total);
+    renderDonut(items, used);
+    renderCatList(items, used);
   }
 
   function renderSavedChip(monthSavs, fromAllow) {
     const el = $('#saved-chip');
     if (!el) return;
-    const total = sumAmounts(monthSavs);
+    const total = sumNet(monthSavs);
     if (total <= 0) {
       el.classList.add('hidden');
       return;
@@ -417,18 +434,16 @@
     el.innerHTML = `<span class="ic-emoji">${emoji}</span><div class="ic-body"><h3>${title}</h3><p>${body}</p></div>`;
   }
 
-  function renderDonut(exps, total) {
+  function renderDonut(items, total) {
     const svg = $('#donut');
-    // clear segments
     $$('.donut-seg', svg).forEach(s => s.remove());
     if (total <= 0) return;
 
-    const byCat = aggregateByCategory(exps);
     const r = 80;
     const c = 2 * Math.PI * r;
     let offset = 0;
 
-    byCat.forEach(({ cat, amount }) => {
+    items.forEach(({ cat, amount }) => {
       const frac = amount / total;
       const len = c * frac;
       const seg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -472,15 +487,16 @@
       .sort((a, b) => b.amount - a.amount);
   }
 
-  function renderCatList(exps, total) {
+  function renderCatList(items, total) {
     const list = $('#cat-list');
     list.innerHTML = '';
-    const byCat = aggregateByCategory(exps);
-    if (byCat.length === 0) {
+    if (items.length === 0) {
       list.innerHTML = `<li class="empty">No expenses yet this month.<br>Tap + to add your first.</li>`;
       return;
     }
-    byCat.forEach(({ cat, amount }) => {
+    const k = monthKey(new Date());
+    const exps = expensesForMonth(k);
+    items.forEach(({ cat, amount, isSavings }) => {
       const pct = total > 0 ? (amount / total) * 100 : 0;
       const expanded = state.expandedCat === cat.id;
       const li = document.createElement('li');
@@ -488,7 +504,7 @@
       li.innerHTML = `
         <div class="cat-dot" style="background:${cat.color}22;color:${cat.color}">${cat.emoji || '•'}</div>
         <div class="cat-info">
-          <div class="cat-name">${escapeHtml(cat.name)}</div>
+          <div class="cat-name">${escapeHtml(cat.name)}${isSavings ? ' <span class="muted small">from allowance</span>' : ''}</div>
           <div class="cat-sub">${Math.round(pct)}% of total</div>
         </div>
         <div>
@@ -502,15 +518,35 @@
       list.appendChild(li);
 
       if (expanded) {
-        const subs = aggregateBySub(exps, cat.id);
         const sb = document.createElement('div');
         sb.className = 'sub-breakdown';
-        if (subs.length === 0) {
-          sb.innerHTML = `<div class="muted small">No sub-category breakdown</div>`;
+        if (isSavings) {
+          // Per-goal breakdown for from-allowance savings
+          const fromAllow = savingsForMonth(k).filter(s => s.source === 'allowance');
+          const map = new Map();
+          fromAllow.forEach(s => {
+            map.set(s.goalId, (map.get(s.goalId) || 0) + signedAmount(s));
+          });
+          const breakdown = Array.from(map.entries())
+            .map(([goalId, amt]) => ({ goal: state.goals.find(g => g.id === goalId), amount: amt }))
+            .filter(x => x.amount !== 0)
+            .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+          if (breakdown.length === 0) {
+            sb.innerHTML = `<div class="muted small">No goals</div>`;
+          } else {
+            sb.innerHTML = breakdown.map(({ goal, amount }) =>
+              `<div class="sub-row"><span class="sn">${escapeHtml(goal?.name || 'Unknown')}</span><span>${fmtMoney(amount)}</span></div>`
+            ).join('');
+          }
         } else {
-          sb.innerHTML = subs.map(({ sub, amount }) =>
-            `<div class="sub-row"><span class="sn">${escapeHtml(sub.name)}</span><span>${fmtMoney(amount)}</span></div>`
-          ).join('');
+          const subs = aggregateBySub(exps, cat.id);
+          if (subs.length === 0) {
+            sb.innerHTML = `<div class="muted small">No sub-category breakdown</div>`;
+          } else {
+            sb.innerHTML = subs.map(({ sub, amount }) =>
+              `<div class="sub-row"><span class="sn">${escapeHtml(sub.name)}</span><span>${fmtMoney(amount)}</span></div>`
+            ).join('');
+          }
         }
         list.appendChild(sb);
       }
@@ -689,8 +725,8 @@
 
     // 7) Savings recommendations
     const monthSavs = savingsForMonth(k);
-    const monthSavTotal = sumAmounts(monthSavs);
-    const monthSavFromAllow = sumAmounts(monthSavs.filter(s => s.source === 'allowance'));
+    const monthSavTotal = sumNet(monthSavs);
+    const monthSavFromAllow = sumNet(monthSavs.filter(s => s.source === 'allowance'));
     const totalMonthlyTarget = state.goals.reduce((a, g) => a + (g.monthlyTarget || 0), 0);
     const projectedSpend = elapsed > 0 ? (total / elapsed) * dim : 0;
     const projectedSurplus = Math.max(0, allowance - projectedSpend - monthSavFromAllow);
@@ -968,6 +1004,12 @@
         renderSavSheetSource();
       });
     });
+    $$('.sav-kind-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.savSheet.kind = btn.dataset.kind;
+        renderSavSheetKind();
+      });
+    });
 
     // Goal editor sheet
     $('#goal-cancel').addEventListener('click', closeGoalSheet);
@@ -1181,8 +1223,8 @@
   function renderSavings() {
     const k = monthKey(new Date());
     const monthSavs = savingsForMonth(k);
-    const monthTotal = sumAmounts(monthSavs);
-    const allTotal = sumAmounts(state.savings);
+    const monthTotal = sumNet(monthSavs);
+    const allTotal = sumNet(state.savings);
     const totalMonthlyTarget = state.goals.reduce((a, g) => a + (g.monthlyTarget || 0), 0);
     const monthPct = totalMonthlyTarget > 0
       ? Math.min(100, (monthTotal / totalMonthlyTarget) * 100)
@@ -1205,7 +1247,7 @@
     const dim = daysInMonth(k);
     const elapsed = today.getDate();
     const projected = elapsed > 0 ? (expsTotal / elapsed) * dim : 0;
-    const monthFromAllowance = sumAmounts(monthSavs.filter(s => s.source === 'allowance'));
+    const monthFromAllowance = Math.max(0, sumNet(monthSavs.filter(s => s.source === 'allowance')));
     const projectedSurplus = Math.max(0, allowance - projected - monthFromAllowance);
     if (allowance > 0 && projectedSurplus > allowance * 0.10 && elapsed > 5) {
       const suggested = Math.round(projectedSurplus * 0.7);
@@ -1228,9 +1270,9 @@
     }
     state.goals.forEach(g => {
       const goalAll = savingsForGoal(g.id);
-      const goalAllTotal = sumAmounts(goalAll);
+      const goalAllTotal = sumNet(goalAll);
       const goalMonth = goalAll.filter(s => s.date && s.date.startsWith(k));
-      const goalMonthTotal = sumAmounts(goalMonth);
+      const goalMonthTotal = sumNet(goalMonth);
       const expanded = state.expandedGoal === g.id;
 
       const targetPct = g.target > 0 ? Math.min(100, (goalAllTotal / g.target) * 100) : null;
@@ -1273,33 +1315,41 @@
         expander.innerHTML = `
           <div class="goal-expand-actions">
             <button class="ghost-btn" data-act="edit">Edit goal</button>
-            <button class="ghost-btn" data-act="add">+ Add saving</button>
+            <button class="ghost-btn" data-act="add">+ Deposit</button>
+            <button class="ghost-btn withdraw" data-act="withdraw">− Withdraw</button>
           </div>
           ${recent.length === 0
             ? '<div class="muted small" style="padding:8px 4px">No entries yet.</div>'
-            : '<div class="muted small" style="padding:8px 4px 4px">Recent</div>' + recent.map(s =>
-                `<div class="sub-row"><span class="sn">${escapeHtml(s.note || (s.date || ''))}${s.time ? ' · ' + formatTime(s.time) : ''}</span><span>${fmtMoney(s.amount)}</span></div>`
-              ).join('')
+            : '<div class="muted small" style="padding:8px 4px 4px">Recent</div>' + recent.map(s => {
+                const isW = s.kind === 'withdraw';
+                const sign = isW ? '−' : '';
+                const cls = isW ? ' withdraw' : '';
+                const label = (s.note || (s.date || '')) + (isW ? ' · withdraw' : '');
+                return `<div class="sub-row${cls}"><span class="sn">${escapeHtml(label)}${s.time ? ' · ' + formatTime(s.time) : ''}</span><span>${sign}${fmtMoney(s.amount)}</span></div>`;
+              }).join('')
           }
         `;
         expander.addEventListener('click', (ev) => ev.stopPropagation());
         expander.querySelector('[data-act="edit"]').addEventListener('click', () => openGoalSheet({ mode: 'edit', goal: g }));
         expander.querySelector('[data-act="add"]').addEventListener('click', () => openSavingsSheet({ mode: 'create', goalId: g.id }));
+        expander.querySelector('[data-act="withdraw"]').addEventListener('click', () => openSavingsSheet({ mode: 'create', goalId: g.id, kind: 'withdraw' }));
         list.appendChild(expander);
       }
     });
   }
 
   // ---- Savings entry sheet ----
-  function openSavingsSheet({ mode, entry = null, goalId = null }) {
+  function openSavingsSheet({ mode, entry = null, goalId = null, kind = null }) {
     state.savSheet.mode = mode;
     state.savSheet.entry = entry;
     state.savSheet.goalId = entry?.goalId || goalId || state.goals[0]?.id || null;
     state.savSheet.source = entry?.source || 'extra';
+    state.savSheet.kind = entry?.kind || kind || 'deposit';
 
     $('#sav-sheet').classList.remove('hidden');
     $('#sav-sheet-title').textContent = mode === 'edit' ? 'Edit savings' : 'Add savings';
-    $('#sav-sheet-save').textContent = mode === 'edit' ? 'Save' : 'Add';
+    const isW = state.savSheet.kind === 'withdraw';
+    $('#sav-sheet-save').textContent = mode === 'edit' ? 'Save' : (isW ? 'Withdraw' : 'Add');
     $('#sav-prefix').textContent = symbol();
     $('#sav-amount').value = entry?.amount || '';
     $('#sav-note').value = entry?.note || '';
@@ -1308,6 +1358,7 @@
     $('#sav-delete').classList.toggle('hidden', mode !== 'edit');
     renderSavSheetGoals();
     renderSavSheetSource();
+    renderSavSheetKind();
     setTimeout(() => $('#sav-amount').focus(), 100);
   }
 
@@ -1317,10 +1368,25 @@
     });
     const hint = $('#sav-source-hint');
     if (hint) {
-      hint.textContent = state.savSheet.source === 'allowance'
-        ? 'This will be deducted from your monthly remaining.'
-        : 'Tracked separately — does not affect your monthly allowance.';
+      const isW = state.savSheet.kind === 'withdraw';
+      const fromAllow = state.savSheet.source === 'allowance';
+      if (isW && fromAllow) hint.textContent = 'Returns to your monthly remaining (frees up budget).';
+      else if (isW && !fromAllow) hint.textContent = 'Cash out from savings — does not affect your allowance.';
+      else if (!isW && fromAllow) hint.textContent = 'This will be deducted from your monthly remaining.';
+      else hint.textContent = 'Tracked separately — does not affect your monthly allowance.';
     }
+  }
+
+  function renderSavSheetKind() {
+    $$('.sav-kind-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.kind === state.savSheet.kind);
+    });
+    const isW = state.savSheet.kind === 'withdraw';
+    $('#sav-sheet').classList.toggle('withdraw-mode', isW);
+    if (state.savSheet.mode !== 'edit') {
+      $('#sav-sheet-save').textContent = isW ? 'Withdraw' : 'Add';
+    }
+    renderSavSheetSource();
   }
   function closeSavingsSheet() { $('#sav-sheet').classList.add('hidden'); }
 
@@ -1352,6 +1418,7 @@
     e.amount = amt;
     e.goalId = state.savSheet.goalId;
     e.source = state.savSheet.source || 'extra';
+    e.kind = state.savSheet.kind || 'deposit';
     e.note = $('#sav-note').value.trim();
     e.date = $('#sav-date').value || todayISO();
     e.time = $('#sav-time').value || nowTime();
@@ -1366,7 +1433,8 @@
     closeSavingsSheet();
     renderAll();
     const goalName = state.goals.find(g => g.id === e.goalId)?.name || 'goal';
-    toast(state.savSheet.mode === 'edit' ? 'Updated' : `Saved to ${goalName}`);
+    const verb = e.kind === 'withdraw' ? 'Withdrew from' : 'Saved to';
+    toast(state.savSheet.mode === 'edit' ? 'Updated' : `${verb} ${goalName}`);
   }
 
   async function deleteSaving() {
