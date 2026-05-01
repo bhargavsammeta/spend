@@ -1,7 +1,7 @@
 /* Spend — service worker
    Cache the app shell so it works fully offline once installed. */
 
-const CACHE = 'spend-v6';
+const CACHE = 'spend-v7';
 const ASSETS = [
   './',
   './index.html',

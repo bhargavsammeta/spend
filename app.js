@@ -378,25 +378,8 @@
     $('#donut-total').textContent = fmtMoney(used);
 
     renderQuickInsight(exps, total, allowance, elapsed, dim);
-    renderSavedChip(monthSavs, savedFromAllowance);
     renderDonut(items, used);
     renderCatList(items, used);
-  }
-
-  function renderSavedChip(monthSavs, fromAllow) {
-    const el = $('#saved-chip');
-    if (!el) return;
-    const total = sumNet(monthSavs);
-    if (total <= 0) {
-      el.classList.add('hidden');
-      return;
-    }
-    el.classList.remove('hidden');
-    el.querySelector('.sav-chip-amt').textContent = fmtMoney(total);
-    const count = monthSavs.length;
-    el.querySelector('.sav-chip-meta').textContent = fromAllow > 0
-      ? `${fmtMoney(fromAllow)} from allowance · ${count}`
-      : `${count} entr${count === 1 ? 'y' : 'ies'} this month`;
   }
 
   function renderQuickInsight(exps, total, allowance, elapsed, dim) {
@@ -1309,7 +1292,7 @@
       if (expanded) {
         const recent = goalAll.slice().sort((a, b) =>
           (b.date || '').localeCompare(a.date || '') || (b.createdAt - a.createdAt)
-        ).slice(0, 5);
+        );
         const expander = document.createElement('div');
         expander.className = 'goal-expand';
         expander.innerHTML = `
@@ -1319,13 +1302,22 @@
             <button class="ghost-btn withdraw" data-act="withdraw">− Withdraw</button>
           </div>
           ${recent.length === 0
-            ? '<div class="muted small" style="padding:8px 4px">No entries yet.</div>'
-            : '<div class="muted small" style="padding:8px 4px 4px">Recent</div>' + recent.map(s => {
+            ? '<div class="muted small" style="padding:8px 4px">No entries yet. Tap to edit any entry below to update or delete it.</div>'
+            : '<div class="muted small" style="padding:8px 4px 4px">Entries · tap to edit</div>' + recent.map(s => {
                 const isW = s.kind === 'withdraw';
                 const sign = isW ? '−' : '';
                 const cls = isW ? ' withdraw' : '';
-                const label = (s.note || (s.date || '')) + (isW ? ' · withdraw' : '');
-                return `<div class="sub-row${cls}"><span class="sn">${escapeHtml(label)}${s.time ? ' · ' + formatTime(s.time) : ''}</span><span>${sign}${fmtMoney(s.amount)}</span></div>`;
+                const dateLabel = formatDateLabel(s.date || '');
+                const timeLabel = s.time ? ' · ' + formatTime(s.time) : '';
+                const noteLabel = s.note ? escapeHtml(s.note) : (isW ? 'Withdraw' : 'Deposit');
+                const srcLabel = s.source === 'allowance' ? ' · from allowance' : '';
+                return `<div class="sav-entry-row${cls}" data-id="${s.id}">
+                  <div class="sav-entry-info">
+                    <div class="sav-entry-title">${noteLabel}</div>
+                    <div class="muted small">${dateLabel}${timeLabel}${srcLabel}</div>
+                  </div>
+                  <div class="sav-entry-amt">${sign}${fmtMoney(s.amount)}</div>
+                </div>`;
               }).join('')
           }
         `;
@@ -1333,6 +1325,13 @@
         expander.querySelector('[data-act="edit"]').addEventListener('click', () => openGoalSheet({ mode: 'edit', goal: g }));
         expander.querySelector('[data-act="add"]').addEventListener('click', () => openSavingsSheet({ mode: 'create', goalId: g.id }));
         expander.querySelector('[data-act="withdraw"]').addEventListener('click', () => openSavingsSheet({ mode: 'create', goalId: g.id, kind: 'withdraw' }));
+        $$('.sav-entry-row', expander).forEach(row => {
+          row.addEventListener('click', () => {
+            const id = row.dataset.id;
+            const entry = state.savings.find(x => x.id === id);
+            if (entry) openSavingsSheet({ mode: 'edit', entry });
+          });
+        });
         list.appendChild(expander);
       }
     });

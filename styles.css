@@ -747,6 +747,22 @@ input[type="number"] { -moz-appearance: textfield; }
 
 .amount-input.slim.full { max-width: none; flex: 1; }
 
+/* ---------- Savings entry rows (clickable) ---------- */
+.sav-entry-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+.sav-entry-row:active { background: var(--bg-soft); }
+.sav-entry-info { flex: 1; min-width: 0; }
+.sav-entry-title { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sav-entry-amt { font-family: var(--serif); font-size: 16px; font-weight: 400; }
+.sav-entry-row.withdraw .sav-entry-amt { color: var(--bad); }
+
 /* ---------- Withdraw styling ---------- */
 .goal-expand-actions .ghost-btn.withdraw { color: var(--bad); }
 .goal-expand .sub-row.withdraw .sn,
