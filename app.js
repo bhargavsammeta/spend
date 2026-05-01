@@ -145,7 +145,7 @@
     expandedGoal: null,
     sheet: { mode: null, expense: null, catId: null, subId: null },
     catSheet: { mode: null, cat: null, color: null },
-    savSheet: { mode: null, entry: null, goalId: null },
+    savSheet: { mode: null, entry: null, goalId: null, source: 'extra' },
     goalSheet: { mode: null, goal: null },
   };
 
@@ -338,13 +338,14 @@
     const total = sumAmounts(exps);
     const monthSavs = savingsForMonth(k);
     const savedThisMonth = sumAmounts(monthSavs);
+    const savedFromAllowance = sumAmounts(monthSavs.filter(s => s.source === 'allowance'));
     const allowance = state.allowance || 0;
     const pct = allowance > 0 ? Math.min(100, (total / allowance) * 100) : 0;
     const today = new Date();
     const dim = daysInMonth(k);
     const elapsed = today.getDate();
     const daysLeft = Math.max(0, dim - elapsed);
-    const remaining = Math.max(0, allowance - total - savedThisMonth);
+    const remaining = Math.max(0, allowance - total - savedFromAllowance);
     const pace = daysLeft > 0 ? remaining / daysLeft : 0;
 
     $('#month-name').textContent = monthLabel(k);
@@ -360,21 +361,25 @@
     $('#donut-total').textContent = fmtMoney(total);
 
     renderQuickInsight(exps, total, allowance, elapsed, dim);
-    renderSavedChip(savedThisMonth, monthSavs.length);
+    renderSavedChip(monthSavs, savedFromAllowance);
     renderDonut(exps, total);
     renderCatList(exps, total);
   }
 
-  function renderSavedChip(amount, count) {
+  function renderSavedChip(monthSavs, fromAllow) {
     const el = $('#saved-chip');
     if (!el) return;
-    if (amount <= 0) {
+    const total = sumAmounts(monthSavs);
+    if (total <= 0) {
       el.classList.add('hidden');
       return;
     }
     el.classList.remove('hidden');
-    el.querySelector('.sav-chip-amt').textContent = fmtMoney(amount);
-    el.querySelector('.sav-chip-meta').textContent = `${count} entr${count === 1 ? 'y' : 'ies'} this month`;
+    el.querySelector('.sav-chip-amt').textContent = fmtMoney(total);
+    const count = monthSavs.length;
+    el.querySelector('.sav-chip-meta').textContent = fromAllow > 0
+      ? `${fmtMoney(fromAllow)} from allowance · ${count}`
+      : `${count} entr${count === 1 ? 'y' : 'ies'} this month`;
   }
 
   function renderQuickInsight(exps, total, allowance, elapsed, dim) {
@@ -685,9 +690,10 @@
     // 7) Savings recommendations
     const monthSavs = savingsForMonth(k);
     const monthSavTotal = sumAmounts(monthSavs);
+    const monthSavFromAllow = sumAmounts(monthSavs.filter(s => s.source === 'allowance'));
     const totalMonthlyTarget = state.goals.reduce((a, g) => a + (g.monthlyTarget || 0), 0);
     const projectedSpend = elapsed > 0 ? (total / elapsed) * dim : 0;
-    const projectedSurplus = Math.max(0, allowance - projectedSpend - monthSavTotal);
+    const projectedSurplus = Math.max(0, allowance - projectedSpend - monthSavFromAllow);
 
     if (allowance > 0 && monthSavTotal === 0 && elapsed > 5) {
       const sugg = Math.round(allowance * 0.10);
@@ -708,7 +714,7 @@
       insights.push({
         cls: 'good', emoji: '💰',
         title: `You could save about ${fmtMoney(sugg)} more`,
-        body: `At your spending pace, ${fmtMoney(projectedSurplus)} of allowance will be unused. Move some to savings before it gets spent.`,
+        body: `At your spending pace, ${fmtMoney(projectedSurplus)} of allowance will be unused. Add a savings entry with "From allowance" to lock it in.`,
       });
     }
     if (totalMonthlyTarget > 0 && monthSavTotal >= totalMonthlyTarget) {
@@ -956,6 +962,12 @@
     $('.sheet-backdrop', $('#sav-sheet')).addEventListener('click', closeSavingsSheet);
     $('#sav-sheet-save').addEventListener('click', saveSaving);
     $('#sav-delete').addEventListener('click', deleteSaving);
+    $$('.sav-source-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.savSheet.source = btn.dataset.source;
+        renderSavSheetSource();
+      });
+    });
 
     // Goal editor sheet
     $('#goal-cancel').addEventListener('click', closeGoalSheet);
@@ -1193,7 +1205,8 @@
     const dim = daysInMonth(k);
     const elapsed = today.getDate();
     const projected = elapsed > 0 ? (expsTotal / elapsed) * dim : 0;
-    const projectedSurplus = Math.max(0, allowance - projected - monthTotal);
+    const monthFromAllowance = sumAmounts(monthSavs.filter(s => s.source === 'allowance'));
+    const projectedSurplus = Math.max(0, allowance - projected - monthFromAllowance);
     if (allowance > 0 && projectedSurplus > allowance * 0.10 && elapsed > 5) {
       const suggested = Math.round(projectedSurplus * 0.7);
       sug.classList.remove('hidden');
@@ -1282,6 +1295,7 @@
     state.savSheet.mode = mode;
     state.savSheet.entry = entry;
     state.savSheet.goalId = entry?.goalId || goalId || state.goals[0]?.id || null;
+    state.savSheet.source = entry?.source || 'extra';
 
     $('#sav-sheet').classList.remove('hidden');
     $('#sav-sheet-title').textContent = mode === 'edit' ? 'Edit savings' : 'Add savings';
@@ -1293,7 +1307,20 @@
     $('#sav-time').value = entry?.time || nowTime();
     $('#sav-delete').classList.toggle('hidden', mode !== 'edit');
     renderSavSheetGoals();
+    renderSavSheetSource();
     setTimeout(() => $('#sav-amount').focus(), 100);
+  }
+
+  function renderSavSheetSource() {
+    $$('.sav-source-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.source === state.savSheet.source);
+    });
+    const hint = $('#sav-source-hint');
+    if (hint) {
+      hint.textContent = state.savSheet.source === 'allowance'
+        ? 'This will be deducted from your monthly remaining.'
+        : 'Tracked separately — does not affect your monthly allowance.';
+    }
   }
   function closeSavingsSheet() { $('#sav-sheet').classList.add('hidden'); }
 
@@ -1324,6 +1351,7 @@
     const e = state.savSheet.entry || { id: uid(), createdAt: Date.now() };
     e.amount = amt;
     e.goalId = state.savSheet.goalId;
+    e.source = state.savSheet.source || 'extra';
     e.note = $('#sav-note').value.trim();
     e.date = $('#sav-date').value || todayISO();
     e.time = $('#sav-time').value || nowTime();
