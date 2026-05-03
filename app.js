@@ -439,7 +439,28 @@
     $$('#app .screen').forEach(s => s.classList.toggle('hidden', s.dataset.screen !== name));
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.nav === name));
     renderAll();
-    window.scrollTo(0, 0);
+    scrollToTop();
+  }
+
+  function scrollToTop() {
+    // Find which element is actually scrollable. With our CSS the body is the
+    // scroll container, but on iOS standalone PWAs the documentElement can be.
+    const containers = [document.documentElement, document.body];
+    const scroller = containers.find(el => el && el.scrollTop > 0) || document.body;
+    const start = scroller.scrollTop;
+    if (start === 0) {
+      try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { window.scrollTo(0, 0); }
+      return;
+    }
+    const duration = 280;
+    const startTime = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      scroller.scrollTop = start * (1 - eased);
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
   }
 
   function bindFab() {
