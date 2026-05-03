@@ -692,7 +692,10 @@
     const dim = daysInMonth(k);
     const elapsed = today.getDate();
     const daysLeft = Math.max(0, dim - elapsed);
-    const remaining = Math.max(0, allowance - total);
+    // Remaining excludes cash flow — that lives in the Cash tab.
+    const digitalAllowance = (state.allowance || 0) + extrasTotal;
+    const digitalSpent = sumAmounts(expensesForMonth(k));
+    const remaining = Math.max(0, digitalAllowance - digitalSpent);
     const pace = daysLeft > 0 ? remaining / daysLeft : 0;
 
     const items = aggregateByCategory(exps);
