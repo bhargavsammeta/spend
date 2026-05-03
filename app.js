@@ -68,7 +68,7 @@
 
   // -------------------- IndexedDB --------------------
   const DB_NAME = 'spend_db';
-  const DB_VERSION = 3;
+  const DB_VERSION = 4;
   let db;
 
   function openDB() {
@@ -98,6 +98,10 @@
         if (!d.objectStoreNames.contains('extras')) {
           const s = d.createObjectStore('extras', { keyPath: 'id' });
           s.createIndex('byMonth', 'month');
+        }
+        if (!d.objectStoreNames.contains('cash')) {
+          const s = d.createObjectStore('cash', { keyPath: 'id' });
+          s.createIndex('byDate', 'date');
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -151,6 +155,7 @@
     categories: [],
     expenses: [],
     extras: [],
+    cash: [],
     viewMonth: monthKey(new Date()),
     selectedScreen: 'home',
     expandedCat: null,
@@ -158,6 +163,7 @@
     sheet: { mode: null, expense: null, catId: null, subId: null },
     catSheet: { mode: null, cat: null, color: null },
     extraSheet: { mode: null, extra: null },
+    cashSheet: { mode: null, entry: null, type: 'add' },
   };
 
   // -------------------- Helpers --------------------
@@ -226,6 +232,9 @@
     return (state.allowance || 0) + sumAmounts(extrasForMonth(k));
   }
   function sumAmounts(arr) { return arr.reduce((a, b) => a + (b.amount || 0), 0); }
+  function cashBalance() {
+    return state.cash.reduce((a, c) => a + (c.type === 'use' ? -1 : 1) * (c.amount || 0), 0);
+  }
 
   // -------------------- Initialization --------------------
   async function init() {
@@ -236,12 +245,14 @@
     const cats = await dbAll('categories');
     const exps = await dbAll('expenses');
     const extras = await dbAll('extras');
+    const cash = await dbAll('cash');
 
     if (cur) state.currency = cur.value;
     if (allow) state.allowance = allow.value;
     state.categories = cats;
     state.expenses = exps;
     state.extras = extras;
+    state.cash = cash;
 
     if (!cur || !allow) {
       showOnboarding();
@@ -378,9 +389,113 @@
   }
 
   function bindFab() {
-    $('#fab').addEventListener('click', () => openExpenseSheet({ mode: 'create' }));
+    $('#fab').addEventListener('click', () => {
+      if (state.selectedScreen === 'cash') openCashSheet({ mode: 'create', type: 'add' });
+      else openExpenseSheet({ mode: 'create' });
+    });
     $('#add-extra').addEventListener('click', () => openExtraSheet({ mode: 'create' }));
     $('#hero-extra-line').addEventListener('click', () => openExtraList());
+    $('#cash-add-btn').addEventListener('click', () => openCashSheet({ mode: 'create', type: 'add' }));
+    $('#cash-use-btn').addEventListener('click', () => openCashSheet({ mode: 'create', type: 'use' }));
+  }
+
+  // ---- Cash ----
+  function renderCash() {
+    const balance = cashBalance();
+    $('#cash-balance').textContent = fmtMoney(balance);
+    const totalIn = sumAmounts(state.cash.filter(c => c.type !== 'use'));
+    const totalOut = sumAmounts(state.cash.filter(c => c.type === 'use'));
+    $('#cash-summary').textContent = state.cash.length === 0
+      ? 'No entries yet'
+      : `${fmtMoney(totalIn)} in · ${fmtMoney(totalOut)} out`;
+
+    const list = $('#cash-list');
+    list.innerHTML = '';
+    const sorted = state.cash.slice().sort((a, b) =>
+      (b.date || '').localeCompare(a.date || '') || (b.createdAt - a.createdAt)
+    );
+    if (sorted.length === 0) {
+      list.innerHTML = `<li class="empty">No cash movements yet.<br>Tap "+ Add cash" when you load your wallet.</li>`;
+      return;
+    }
+    let lastDate = '';
+    sorted.forEach(c => {
+      if (c.date !== lastDate) {
+        const head = document.createElement('li');
+        head.className = 'date-head';
+        head.textContent = formatDateLabel(c.date);
+        list.appendChild(head);
+        lastDate = c.date;
+      }
+      const isUse = c.type === 'use';
+      const sign = isUse ? '−' : '+';
+      const timeStr = formatTime(c.time);
+      const li = document.createElement('li');
+      li.className = 'tx-row cash-row' + (isUse ? ' use' : ' add');
+      li.innerHTML = `
+        <div class="cash-dot ${isUse ? 'use' : 'add'}">${isUse ? '−' : '+'}</div>
+        <div class="tx-info">
+          <div class="tx-title">${escapeHtml(c.note || (isUse ? 'Used cash' : 'Added cash'))}</div>
+          <div class="tx-meta">${isUse ? 'Spent from wallet' : 'Loaded into wallet'}${timeStr ? ' · ' + timeStr : ''}</div>
+        </div>
+        <div class="tx-amt cash-amt ${isUse ? 'use' : 'add'}">${sign}${fmtMoney(c.amount)}</div>
+      `;
+      li.addEventListener('click', () => openCashSheet({ mode: 'edit', entry: c }));
+      list.appendChild(li);
+    });
+  }
+
+  function openCashSheet({ mode, entry = null, type = null }) {
+    state.cashSheet.mode = mode;
+    state.cashSheet.entry = entry;
+    state.cashSheet.type = entry?.type || type || 'add';
+    $('#cash-sheet').classList.remove('hidden');
+    $('#cash-sheet-title').textContent = mode === 'edit'
+      ? (state.cashSheet.type === 'use' ? 'Edit cash used' : 'Edit cash added')
+      : (state.cashSheet.type === 'use' ? 'Used cash' : 'Add cash');
+    $('#cash-sheet-save').textContent = mode === 'edit' ? 'Save' : (state.cashSheet.type === 'use' ? 'Subtract' : 'Add');
+    $('#cash-prefix').textContent = symbol();
+    $('#cash-amount').value = entry?.amount || '';
+    $('#cash-note').value = entry?.note || '';
+    $('#cash-date').value = entry?.date || todayISO();
+    $('#cash-time').value = entry?.time || nowTime();
+    $('#cash-delete').classList.toggle('hidden', mode !== 'edit');
+    $('#cash-sheet').classList.toggle('use-mode', state.cashSheet.type === 'use');
+    $$('.cash-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === state.cashSheet.type));
+    setTimeout(() => $('#cash-amount').focus(), 100);
+  }
+  function closeCashSheet() { $('#cash-sheet').classList.add('hidden'); }
+
+  async function saveCash() {
+    const amt = parseFloat($('#cash-amount').value);
+    if (!amt || amt <= 0) return toast('Enter an amount');
+    const c = state.cashSheet.entry || { id: uid(), createdAt: Date.now() };
+    c.amount = amt;
+    c.type = state.cashSheet.type;
+    c.note = $('#cash-note').value.trim();
+    c.date = $('#cash-date').value || todayISO();
+    c.time = $('#cash-time').value || nowTime();
+    await dbPut('cash', c);
+    if (state.cashSheet.mode === 'edit') {
+      const idx = state.cash.findIndex(x => x.id === c.id);
+      if (idx >= 0) state.cash[idx] = c;
+    } else {
+      state.cash.push(c);
+    }
+    closeCashSheet();
+    renderAll();
+    const verb = c.type === 'use' ? 'Subtracted' : 'Added';
+    toast(state.cashSheet.mode === 'edit' ? 'Updated' : `${verb} ${fmtMoney(amt)}`);
+  }
+
+  async function deleteCash() {
+    if (!state.cashSheet.entry) return;
+    if (!confirm('Delete this cash entry?')) return;
+    await dbDel('cash', state.cashSheet.entry.id);
+    state.cash = state.cash.filter(x => x.id !== state.cashSheet.entry.id);
+    closeCashSheet();
+    renderAll();
+    toast('Deleted');
   }
 
   function openExtraSheet({ mode, extra = null }) {
@@ -445,6 +560,7 @@
   // -------------------- Render --------------------
   function renderAll() {
     if (state.selectedScreen === 'home') renderHome();
+    if (state.selectedScreen === 'cash') renderCash();
     if (state.selectedScreen === 'insights') renderInsights();
     if (state.selectedScreen === 'history') renderHistory();
     if (state.selectedScreen === 'settings') renderSettings();
@@ -1167,6 +1283,26 @@
     $('.sheet-backdrop', $('#extra-sheet')).addEventListener('click', closeExtraSheet);
     $('#extra-sheet-save').addEventListener('click', saveExtra);
     $('#extra-delete').addEventListener('click', deleteExtra);
+
+    // Cash sheet
+    $('#cash-cancel').addEventListener('click', closeCashSheet);
+    $('#cash-close').addEventListener('click', closeCashSheet);
+    $('.sheet-backdrop', $('#cash-sheet')).addEventListener('click', closeCashSheet);
+    $('#cash-sheet-save').addEventListener('click', saveCash);
+    $('#cash-delete').addEventListener('click', deleteCash);
+    $$('.cash-type-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.cashSheet.type = btn.dataset.type;
+        $$('.cash-type-btn').forEach(b => b.classList.toggle('active', b === btn));
+        $('#cash-sheet').classList.toggle('use-mode', state.cashSheet.type === 'use');
+        $('#cash-sheet-title').textContent = state.cashSheet.mode === 'edit'
+          ? (state.cashSheet.type === 'use' ? 'Edit cash used' : 'Edit cash added')
+          : (state.cashSheet.type === 'use' ? 'Used cash' : 'Add cash');
+        if (state.cashSheet.mode !== 'edit') {
+          $('#cash-sheet-save').textContent = state.cashSheet.type === 'use' ? 'Subtract' : 'Add';
+        }
+      });
+    });
   }
 
   function openExpenseSheet({ mode, expense = null }) {

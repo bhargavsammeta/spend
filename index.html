@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=6" />
+  <link rel="stylesheet" href="styles.css?v=7" />
   <title>Spend — Monthly Tracker</title>
 </head>
 <body>
@@ -131,6 +131,43 @@
             <button class="ghost-btn" data-nav="history">All</button>
           </div>
           <ul class="tx-list" id="recent-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- CASH -->
+    <section class="screen hidden" data-screen="cash">
+      <header class="topbar">
+        <div>
+          <p class="topbar-eyebrow">In hand</p>
+          <h1 class="topbar-title">Cash</h1>
+        </div>
+      </header>
+      <div class="content">
+        <div class="hero card cash-hero">
+          <div class="hero-head">
+            <span class="muted">Cash on hand</span>
+          </div>
+          <div class="hero-amount" id="cash-balance">0</div>
+          <div class="hero-allowance" id="cash-summary">No entries yet</div>
+          <div class="cash-actions">
+            <button class="cash-btn cash-btn-add" id="cash-add-btn">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+              <span>Add cash</span>
+            </button>
+            <button class="cash-btn cash-btn-use" id="cash-use-btn">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 11h14v2H5z"/></svg>
+              <span>Used</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Movements</h2>
+            <span class="muted small" id="cash-tx-count"></span>
+          </div>
+          <ul class="tx-list" id="cash-list"></ul>
         </div>
       </div>
     </section>
@@ -293,6 +330,10 @@
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 3l9 8h-3v9h-4v-6h-4v6H6v-9H3z"/></svg>
         <span>Home</span>
       </button>
+      <button class="tab" data-nav="cash">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M21 7H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zm0 8H3V9h18v6zM12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+        <span>Cash</span>
+      </button>
       <button class="tab" data-nav="insights">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M5 21h2v-9H5v9zm4 0h2V8H9v13zm4 0h2v-6h-2v6zm4 0h2V3h-2v18z"/></svg>
         <span>Insights</span>
@@ -389,6 +430,53 @@
     </div>
   </div>
 
+  <!-- Cash sheet -->
+  <div id="cash-sheet" class="sheet hidden">
+    <div class="sheet-backdrop"></div>
+    <div class="sheet-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2 id="cash-sheet-title" class="serif">Add cash</h2>
+        <button class="icon-btn-sm" id="cash-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18.3 5.71L17 4.4 12 9.4 7 4.4 5.7 5.71 10.7 10.71 5.7 15.71 7 17.02 12 12.02 17 17.02 18.3 15.71 13.3 10.71z"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <div class="amount-big">
+          <span class="amount-prefix-big" id="cash-prefix">₹</span>
+          <input type="number" inputmode="decimal" id="cash-amount" placeholder="0" />
+        </div>
+
+        <label class="field-label">Type</label>
+        <div class="seg">
+          <button class="seg-btn cash-type-btn active" data-type="add">+ Add cash</button>
+          <button class="seg-btn cash-type-btn" data-type="use">− Used</button>
+        </div>
+
+        <label class="field-label">Note (optional)</label>
+        <input type="text" id="cash-note" placeholder="e.g. ATM, paid auto, lunch" class="text-input" />
+
+        <div class="date-time-row">
+          <div>
+            <label class="field-label">Date</label>
+            <input type="date" id="cash-date" class="text-input" />
+          </div>
+          <div>
+            <label class="field-label">Time</label>
+            <input type="time" id="cash-time" class="text-input" />
+          </div>
+        </div>
+
+        <div class="sheet-actions">
+          <button class="ghost-btn block" id="cash-cancel">Cancel</button>
+          <button class="primary-btn" id="cash-sheet-save">Add</button>
+        </div>
+
+        <button class="danger-btn block hidden" id="cash-delete">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Extra income sheet -->
   <div id="extra-sheet" class="sheet hidden">
     <div class="sheet-backdrop"></div>
@@ -426,6 +514,6 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
