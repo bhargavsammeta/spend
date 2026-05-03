@@ -8,43 +8,61 @@
 
   // -------------------- Default categories --------------------
   const DEFAULT_CATS = [
-    { name: 'Food', emoji: '🍽️', color: '#ff6b6b',
+    { name: 'Food', emoji: '🍽️', color: '#a04848',
       subs: ['Veg', 'Non-Veg', 'Tiffin', 'Fast Food', 'Snacks', 'Sweets / Desserts'] },
-    { name: 'Beverages', emoji: '🥤', color: '#4ecdc4',
+    { name: 'Beverages', emoji: '🥤', color: '#5a8b85',
       subs: ['Coconut Water', 'Buttermilk', 'Milkshakes', 'Juices', 'Tea / Coffee', 'Soft Drinks', 'Energy Drinks', 'Bottled Water'] },
-    { name: 'Groceries', emoji: '🛒', color: '#ffa94d',
+    { name: 'Groceries', emoji: '🛒', color: '#b58339',
       subs: ['Vegetables', 'Detergent', 'Dish Wash', 'Cleaning Supplies', 'Soap & Sanitizer', 'Household'] },
-    { name: 'Fruits', emoji: '🍎', color: '#fb7185',
+    { name: 'Fruits', emoji: '🍎', color: '#8d3a47',
       subs: ['Daily', 'Seasonal', 'Dry Fruits', 'Imported'] },
-    { name: 'Transport', emoji: '🚗', color: '#4cc9f0',
+    { name: 'Transport', emoji: '🚗', color: '#4a6885',
       subs: ['Bike', 'Fuel', 'Auto', 'Cab', 'Bus', 'Train / Metro', 'Flight', 'Parking'] },
-    { name: 'Bills & Utilities', emoji: '💡', color: '#fab005',
+    { name: 'Bills & Utilities', emoji: '💡', color: '#c89a3e',
       subs: ['Electricity', 'Water', 'Internet', 'Mobile Recharge', 'Gas', 'Subscriptions'] },
-    { name: 'Rent & Housing', emoji: '🏠', color: '#845ef7',
+    { name: 'Rent & Housing', emoji: '🏠', color: '#6e4a7d',
       subs: ['Rent', 'Maintenance', 'Repairs'] },
-    { name: 'Health', emoji: '💊', color: '#51cf66',
+    { name: 'Health', emoji: '💊', color: '#618451',
       subs: ['Medicines', 'Doctor', 'Gym', 'Supplements'] },
-    { name: 'Shopping', emoji: '🛍️', color: '#f06595',
+    { name: 'Shopping', emoji: '🛍️', color: '#9d567a',
       subs: ['Clothes', 'Footwear', 'Electronics', 'Accessories'] },
-    { name: 'Entertainment', emoji: '🎬', color: '#22b8cf',
+    { name: 'Entertainment', emoji: '🎬', color: '#5d8083',
       subs: ['Movies', 'Games', 'Events', 'Streaming'] },
-    { name: 'Personal Care', emoji: '💇', color: '#cc5de8',
+    { name: 'Personal Care', emoji: '💇', color: '#8f6e93',
       subs: ['Salon / Haircut', 'Skincare', 'Toiletries'] },
-    { name: 'Education', emoji: '📚', color: '#3bc9db',
+    { name: 'Education', emoji: '📚', color: '#6c8aa0',
       subs: ['Books', 'Courses', 'Stationery'] },
-    { name: 'Travel', emoji: '✈️', color: '#ff8787',
+    { name: 'Travel', emoji: '✈️', color: '#936239',
       subs: ['Hotels', 'Tickets', 'Activities'] },
-    { name: 'Gifts & Donations', emoji: '🎁', color: '#fcc419',
+    { name: 'Gifts & Donations', emoji: '🎁', color: '#b08948',
       subs: ['Gifts', 'Charity'] },
-    { name: 'Misc', emoji: '✨', color: '#868e96',
+    { name: 'Misc', emoji: '✨', color: '#7d7163',
       subs: ['Other'] },
   ];
 
   const COLOR_PALETTE = [
-    '#ff6b6b','#4ecdc4','#ffa94d','#5b6cff','#fab005','#845ef7',
-    '#51cf66','#f06595','#22b8cf','#cc5de8','#3bc9db','#ff8787',
-    '#fcc419','#868e96','#20c997','#e64980'
+    '#a04848','#5a8b85','#b58339','#8d3a47','#4a6885','#c89a3e',
+    '#6e4a7d','#618451','#9d567a','#5d8083','#8f6e93','#6c8aa0',
+    '#936239','#b08948','#7d7163','#5a4742'
   ];
+
+  const COLOR_MIGRATION_V3 = {
+    '#ff6b6b': '#a04848',
+    '#4ecdc4': '#5a8b85',
+    '#ffa94d': '#b58339',
+    '#fb7185': '#8d3a47',
+    '#4cc9f0': '#4a6885',
+    '#fab005': '#c89a3e',
+    '#845ef7': '#6e4a7d',
+    '#51cf66': '#618451',
+    '#f06595': '#9d567a',
+    '#22b8cf': '#5d8083',
+    '#cc5de8': '#8f6e93',
+    '#3bc9db': '#6c8aa0',
+    '#ff8787': '#936239',
+    '#fcc419': '#b08948',
+    '#868e96': '#7d7163',
+  };
 
   const CURRENCY_SYMBOLS = { INR: '₹', USD: '$' };
 
@@ -234,47 +252,60 @@
     }
   }
 
-  const CATS_VERSION = 2;
+  const CATS_VERSION = 3;
   async function migrateCategories() {
     const v = await dbGet('settings', 'catsVersion');
-    if ((v?.value || 1) >= CATS_VERSION) return;
+    const cur = v?.value || 1;
+    if (cur >= CATS_VERSION) return;
 
-    const groceries = state.categories.find(c => c.name === 'Groceries');
-    let fruits = state.categories.find(c => c.name === 'Fruits');
-    const oldFruitsSub = groceries?.subs.find(s => s.name === 'Fruits');
+    if (cur < 2) {
+      const groceries = state.categories.find(c => c.name === 'Groceries');
+      let fruits = state.categories.find(c => c.name === 'Fruits');
+      const oldFruitsSub = groceries?.subs.find(s => s.name === 'Fruits');
 
-    if (!fruits) {
-      fruits = {
-        id: uid(),
-        name: 'Fruits',
-        emoji: '🍎',
-        color: '#fb7185',
-        subs: ['Daily', 'Seasonal', 'Dry Fruits', 'Imported']
-          .map(n => ({ id: uid(), name: n })),
-      };
-      const groceriesIdx = state.categories.findIndex(c => c.name === 'Groceries');
-      const insertAt = groceriesIdx >= 0 ? groceriesIdx + 1 : state.categories.length;
-      state.categories.splice(insertAt, 0, fruits);
-      await dbPut('categories', fruits);
+      if (!fruits) {
+        fruits = {
+          id: uid(),
+          name: 'Fruits',
+          emoji: '🍎',
+          color: '#8d3a47',
+          subs: ['Daily', 'Seasonal', 'Dry Fruits', 'Imported']
+            .map(n => ({ id: uid(), name: n })),
+        };
+        const groceriesIdx = state.categories.findIndex(c => c.name === 'Groceries');
+        const insertAt = groceriesIdx >= 0 ? groceriesIdx + 1 : state.categories.length;
+        state.categories.splice(insertAt, 0, fruits);
+        await dbPut('categories', fruits);
+      }
+
+      if (groceries) {
+        const drop = new Set(['Fruits', 'Dairy', 'Staples']);
+        groceries.subs = groceries.subs.filter(s => !drop.has(s.name));
+        const have = new Set(groceries.subs.map(s => s.name));
+        ['Detergent', 'Dish Wash', 'Cleaning Supplies', 'Soap & Sanitizer'].forEach(n => {
+          if (!have.has(n)) groceries.subs.push({ id: uid(), name: n });
+        });
+        await dbPut('categories', groceries);
+      }
+
+      if (oldFruitsSub && fruits) {
+        const newSub = fruits.subs[0];
+        for (const e of state.expenses) {
+          if (e.subId === oldFruitsSub.id) {
+            e.categoryId = fruits.id;
+            e.subId = newSub.id;
+            await dbPut('expenses', e);
+          }
+        }
+      }
     }
 
-    if (groceries) {
-      const drop = new Set(['Fruits', 'Dairy', 'Staples']);
-      groceries.subs = groceries.subs.filter(s => !drop.has(s.name));
-      const have = new Set(groceries.subs.map(s => s.name));
-      ['Detergent', 'Dish Wash', 'Cleaning Supplies', 'Soap & Sanitizer'].forEach(n => {
-        if (!have.has(n)) groceries.subs.push({ id: uid(), name: n });
-      });
-      await dbPut('categories', groceries);
-    }
-
-    if (oldFruitsSub && fruits) {
-      const newSub = fruits.subs[0];
-      for (const e of state.expenses) {
-        if (e.subId === oldFruitsSub.id) {
-          e.categoryId = fruits.id;
-          e.subId = newSub.id;
-          await dbPut('expenses', e);
+    if (cur < 3) {
+      for (const cat of state.categories) {
+        const next = COLOR_MIGRATION_V3[(cat.color || '').toLowerCase()];
+        if (next && cat.color !== next) {
+          cat.color = next;
+          await dbPut('categories', cat);
         }
       }
     }
