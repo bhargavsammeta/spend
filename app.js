@@ -50,7 +50,7 @@
 
   // -------------------- IndexedDB --------------------
   const DB_NAME = 'spend_db';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   let db;
 
   function openDB() {
@@ -76,6 +76,10 @@
           const s = d.createObjectStore('savingsEntries', { keyPath: 'id' });
           s.createIndex('byDate', 'date');
           s.createIndex('byGoal', 'goalId');
+        }
+        if (!d.objectStoreNames.contains('extras')) {
+          const s = d.createObjectStore('extras', { keyPath: 'id' });
+          s.createIndex('byMonth', 'month');
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -128,12 +132,14 @@
     allowance: 0,
     categories: [],
     expenses: [],
+    extras: [],
     viewMonth: monthKey(new Date()),
     selectedScreen: 'home',
     expandedCat: null,
     insightsRange: 'month',
     sheet: { mode: null, expense: null, catId: null, subId: null },
     catSheet: { mode: null, cat: null, color: null },
+    extraSheet: { mode: null, extra: null },
   };
 
   // -------------------- Helpers --------------------
@@ -195,6 +201,12 @@
   function expensesForMonth(k) {
     return state.expenses.filter(e => e.date && e.date.startsWith(k));
   }
+  function extrasForMonth(k) {
+    return state.extras.filter(x => x.month === k);
+  }
+  function allowanceForMonth(k) {
+    return (state.allowance || 0) + sumAmounts(extrasForMonth(k));
+  }
   function sumAmounts(arr) { return arr.reduce((a, b) => a + (b.amount || 0), 0); }
 
   // -------------------- Initialization --------------------
@@ -205,11 +217,13 @@
     const allow = await dbGet('settings', 'allowance');
     const cats = await dbAll('categories');
     const exps = await dbAll('expenses');
+    const extras = await dbAll('extras');
 
     if (cur) state.currency = cur.value;
     if (allow) state.allowance = allow.value;
     state.categories = cats;
     state.expenses = exps;
+    state.extras = extras;
 
     if (!cur || !allow) {
       showOnboarding();
@@ -334,6 +348,67 @@
 
   function bindFab() {
     $('#fab').addEventListener('click', () => openExpenseSheet({ mode: 'create' }));
+    $('#add-extra').addEventListener('click', () => openExtraSheet({ mode: 'create' }));
+    $('#hero-extra-line').addEventListener('click', () => openExtraList());
+  }
+
+  function openExtraSheet({ mode, extra = null }) {
+    state.extraSheet.mode = mode;
+    state.extraSheet.extra = extra;
+    $('#extra-sheet').classList.remove('hidden');
+    $('#extra-sheet-title').textContent = mode === 'edit' ? 'Edit extra income' : 'Add extra income';
+    $('#extra-sheet-save').textContent = mode === 'edit' ? 'Save' : 'Add';
+    $('#extra-prefix').textContent = symbol();
+    $('#extra-amount').value = extra?.amount || '';
+    $('#extra-note').value = extra?.note || '';
+    $('#extra-date').value = extra?.date || todayISO();
+    $('#extra-delete').classList.toggle('hidden', mode !== 'edit');
+    setTimeout(() => $('#extra-amount').focus(), 100);
+  }
+  function closeExtraSheet() { $('#extra-sheet').classList.add('hidden'); }
+
+  async function saveExtra() {
+    const amt = parseFloat($('#extra-amount').value);
+    if (!amt || amt <= 0) return toast('Enter an amount');
+    const date = $('#extra-date').value || todayISO();
+    const e = state.extraSheet.extra || { id: uid(), createdAt: Date.now() };
+    e.amount = amt;
+    e.note = $('#extra-note').value.trim();
+    e.date = date;
+    e.month = date.slice(0, 7);
+    await dbPut('extras', e);
+    if (state.extraSheet.mode === 'edit') {
+      const idx = state.extras.findIndex(x => x.id === e.id);
+      if (idx >= 0) state.extras[idx] = e;
+    } else {
+      state.extras.push(e);
+    }
+    closeExtraSheet();
+    renderAll();
+    toast(state.extraSheet.mode === 'edit' ? 'Updated' : `+${fmtMoney(amt)} added`);
+  }
+
+  async function deleteExtra() {
+    if (!state.extraSheet.extra) return;
+    if (!confirm('Delete this income entry?')) return;
+    await dbDel('extras', state.extraSheet.extra.id);
+    state.extras = state.extras.filter(x => x.id !== state.extraSheet.extra.id);
+    closeExtraSheet();
+    renderAll();
+    toast('Deleted');
+  }
+
+  function openExtraList() {
+    const k = monthKey(new Date());
+    const list = extrasForMonth(k).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (list.length === 0) return openExtraSheet({ mode: 'create' });
+    if (list.length === 1) return openExtraSheet({ mode: 'edit', extra: list[0] });
+    const lines = list.map((x, i) => `${i + 1}. ${fmtMoney(x.amount)}${x.note ? ' — ' + x.note : ''} (${x.date})`).join('\n');
+    const choice = prompt(`Extra income this month:\n\n${lines}\n\nType a number to edit, or "new" to add another:`, 'new');
+    if (choice === null) return;
+    if (choice === 'new' || choice === '') return openExtraSheet({ mode: 'create' });
+    const idx = parseInt(choice, 10) - 1;
+    if (idx >= 0 && idx < list.length) openExtraSheet({ mode: 'edit', extra: list[idx] });
   }
 
   // -------------------- Render --------------------
@@ -349,7 +424,9 @@
     const k = monthKey(new Date());
     const exps = expensesForMonth(k);
     const total = sumAmounts(exps);
-    const allowance = state.allowance || 0;
+    const monthExtras = extrasForMonth(k);
+    const extrasTotal = sumAmounts(monthExtras);
+    const allowance = allowanceForMonth(k);
     const pct = allowance > 0 ? Math.min(100, (total / allowance) * 100) : 0;
     const today = new Date();
     const dim = daysInMonth(k);
@@ -371,6 +448,14 @@
     $('#hero-days').textContent = daysLeft;
     $('#total-tx').textContent = `${exps.length} transaction${exps.length === 1 ? '' : 's'}`;
     $('#donut-total').textContent = fmtMoney(total);
+
+    const extraLine = $('#hero-extra-line');
+    if (extrasTotal > 0) {
+      extraLine.classList.remove('hidden');
+      extraLine.innerHTML = `+${fmtMoney(extrasTotal)} extra income · <span>tap to manage</span>`;
+    } else {
+      extraLine.classList.add('hidden');
+    }
 
     renderDonut(items, total);
     renderCatList(items, total);
@@ -594,7 +679,7 @@
       const dim = daysInMonth(k);
       const elapsed = new Date().getDate();
       const projected = elapsed > 0 ? (total / elapsed) * dim : 0;
-      const allowance = state.allowance || 0;
+      const allowance = allowanceForMonth(k);
       if (allowance > 0 && projected > allowance) {
         const over = projected - allowance;
         tip.className = 'insight-card bad';
@@ -1044,6 +1129,13 @@
     $('#cat-delete').addEventListener('click', deleteCategory);
     $('#sub-add').addEventListener('click', addSubInline);
     $('#sub-new').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addSubInline(); } });
+
+    // Extra income sheet
+    $('#extra-cancel').addEventListener('click', closeExtraSheet);
+    $('#extra-close').addEventListener('click', closeExtraSheet);
+    $('.sheet-backdrop', $('#extra-sheet')).addEventListener('click', closeExtraSheet);
+    $('#extra-sheet-save').addEventListener('click', saveExtra);
+    $('#extra-delete').addEventListener('click', deleteExtra);
   }
 
   function openExpenseSheet({ mode, expense = null }) {

@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="styles.css?v=6" />
   <title>Spend — Monthly Tracker</title>
 </head>
 <body>
@@ -77,9 +77,16 @@
             <span class="hero-pct" id="hero-pct">0%</span>
           </div>
           <div class="hero-amount" id="hero-spent">0</div>
-          <div class="hero-allowance">
-            of <span id="hero-allowance">0</span> allowance
+          <div class="hero-allowance-row">
+            <div class="hero-allowance">
+              of <span id="hero-allowance">0</span> allowance
+            </div>
+            <button class="income-chip" id="add-extra" aria-label="Add extra income">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+              <span>Income</span>
+            </button>
           </div>
+          <div class="hero-extra-line hidden" id="hero-extra-line"></div>
           <div class="progress">
             <div class="progress-fill" id="hero-progress"></div>
           </div>
@@ -382,9 +389,43 @@
     </div>
   </div>
 
+  <!-- Extra income sheet -->
+  <div id="extra-sheet" class="sheet hidden">
+    <div class="sheet-backdrop"></div>
+    <div class="sheet-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2 id="extra-sheet-title" class="serif">Add extra income</h2>
+        <button class="icon-btn-sm" id="extra-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18.3 5.71L17 4.4 12 9.4 7 4.4 5.7 5.71 10.7 10.71 5.7 15.71 7 17.02 12 12.02 17 17.02 18.3 15.71 13.3 10.71z"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <p class="muted small" style="margin-top:-4px">Bumps this month's allowance — e.g. a freelance payment, gift, or bonus.</p>
+        <div class="amount-big">
+          <span class="amount-prefix-big" id="extra-prefix">₹</span>
+          <input type="number" inputmode="decimal" id="extra-amount" placeholder="0" />
+        </div>
+
+        <label class="field-label">Note (optional)</label>
+        <input type="text" id="extra-note" placeholder="e.g. freelance, gift, bonus" class="text-input" />
+
+        <label class="field-label">Date</label>
+        <input type="date" id="extra-date" class="text-input" />
+
+        <div class="sheet-actions">
+          <button class="ghost-btn block" id="extra-cancel">Cancel</button>
+          <button class="primary-btn" id="extra-sheet-save">Add</button>
+        </div>
+
+        <button class="danger-btn block hidden" id="extra-delete">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
