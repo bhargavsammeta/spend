@@ -70,7 +70,7 @@ ul { list-style: none; }
 
 /* ---------- Layout ---------- */
 .screen { min-height: 100dvh; padding-top: var(--safe-top); }
-#app .screen { padding-bottom: calc(86px + var(--safe-bot)); }
+#app .screen { padding-bottom: calc(100px + var(--safe-bot)); }
 .content { padding: 8px 16px 32px; display: flex; flex-direction: column; gap: 14px; }
 
 .topbar {
@@ -347,38 +347,52 @@ ul { list-style: none; }
   bottom: 0; left: 0; right: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  background: rgba(13,13,17,0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(8,8,11,0.96);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
   border-top: 1px solid var(--border);
   padding-bottom: var(--safe-bot);
-  z-index: 5;
+  z-index: 50;
+  touch-action: manipulation;
 }
 .tab {
   display: flex; flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 10px 4px 8px;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 4px 10px;
+  min-height: 56px;
   color: var(--text-faint);
   font-size: 11px;
   font-weight: 500;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+  transition: color .12s ease;
+}
+.tab:active {
+  background: rgba(255,255,255,0.05);
 }
 .tab.active { color: var(--accent); }
-.tab svg { display: block; }
+.tab svg { display: block; pointer-events: none; }
+.tab span { pointer-events: none; }
 
 /* ---------- FAB ---------- */
 .fab {
   position: fixed;
   right: 18px;
-  bottom: calc(86px + var(--safe-bot));
+  bottom: calc(96px + var(--safe-bot));
   width: 60px; height: 60px;
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-text);
   display: grid; place-items: center;
   box-shadow: 0 14px 32px rgba(197,251,69,0.30);
-  z-index: 6;
+  z-index: 49;
   transition: transform .15s ease;
+  touch-action: manipulation;
 }
 .fab:active { transform: scale(0.93); }
 
