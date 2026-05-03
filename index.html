@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=9" />
+  <link rel="stylesheet" href="styles.css?v=17" />
   <title>Spend — Monthly Tracker</title>
 </head>
 <body>
@@ -117,8 +117,9 @@
               <circle cx="100" cy="100" r="80" class="donut-track" />
             </svg>
             <div class="donut-center">
-              <p class="muted small">Total</p>
+              <p class="muted small" id="donut-label">Total</p>
               <p class="donut-total" id="donut-total">0</p>
+              <p class="muted small donut-pct" id="donut-pct"></p>
             </div>
           </div>
           <ul class="cat-list" id="cat-list"></ul>
@@ -521,6 +522,6 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

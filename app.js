@@ -164,6 +164,7 @@
     viewMonth: monthKey(new Date()),
     selectedScreen: 'home',
     expandedCat: null,
+    activeDonut: null,
     insightsRange: 'month',
     sheet: { mode: null, expense: null, catId: null, subId: null },
     catSheet: { mode: null, cat: null, color: null },
@@ -464,6 +465,12 @@
   }
 
   function bindFab() {
+    document.addEventListener('click', (e) => {
+      if (state.activeDonut && !e.target.closest('.donut-seg')) {
+        state.activeDonut = null;
+        if (state.selectedScreen === 'home') renderHome();
+      }
+    });
     $('#fab').addEventListener('click', () => {
       if (state.selectedScreen === 'cash') openCashSheet({ mode: 'create', type: 'add' });
       else openExpenseSheet({ mode: 'create' });
@@ -731,7 +738,20 @@
     $('#hero-pace').textContent = `${fmtMoney(pace)}/day`;
     $('#hero-days').textContent = daysLeft;
     $('#total-tx').textContent = `${exps.length} transaction${exps.length === 1 ? '' : 's'}`;
-    $('#donut-total').textContent = fmtMoney(total);
+
+    const activeCat = state.activeDonut ? items.find(i => i.cat.id === state.activeDonut) : null;
+    if (activeCat) {
+      $('#donut-label').innerHTML = `<span style="color:${activeCat.cat.color}">${activeCat.cat.emoji || '•'} ${escapeHtml(activeCat.cat.name)}</span>`;
+      $('#donut-total').textContent = fmtMoney(activeCat.amount);
+      $('#donut-total').style.color = activeCat.cat.color;
+      $('#donut-pct').textContent = total > 0 ? `${Math.round((activeCat.amount / total) * 100)}% of total` : '';
+    } else {
+      state.activeDonut = null;
+      $('#donut-label').textContent = 'Total';
+      $('#donut-total').textContent = fmtMoney(total);
+      $('#donut-total').style.color = '';
+      $('#donut-pct').textContent = '';
+    }
 
     const extraLine = $('#hero-extra-line');
     if (extrasTotal > 0) {
@@ -799,7 +819,8 @@
 
   function renderDonut(items, total) {
     const svg = $('#donut');
-    $$('.donut-seg', svg).forEach(s => s.remove());
+    $$('.donut-seg, .donut-label-svg, .donut-mask', svg).forEach(s => s.remove());
+    svg.classList.toggle('has-active', !!state.activeDonut);
     if (total <= 0) return;
 
     const r = 80;
@@ -809,14 +830,21 @@
     items.forEach(({ cat, amount }) => {
       const frac = amount / total;
       const len = c * frac;
+      const active = state.activeDonut === cat.id;
       const seg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       seg.setAttribute('cx', '100');
       seg.setAttribute('cy', '100');
       seg.setAttribute('r', r);
-      seg.setAttribute('class', 'donut-seg');
+      seg.setAttribute('class', 'donut-seg' + (active ? ' active' : ''));
       seg.setAttribute('stroke', cat.color);
       seg.setAttribute('stroke-dasharray', `${len} ${c - len}`);
       seg.setAttribute('stroke-dashoffset', `-${offset}`);
+      seg.style.cursor = 'pointer';
+      seg.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        state.activeDonut = state.activeDonut === cat.id ? null : cat.id;
+        renderHome();
+      });
       svg.appendChild(seg);
       offset += len;
     });
