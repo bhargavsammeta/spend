@@ -13,7 +13,9 @@
     { name: 'Beverages', emoji: '🥤', color: '#4ecdc4',
       subs: ['Coconut Water', 'Buttermilk', 'Milkshakes', 'Juices', 'Tea / Coffee', 'Soft Drinks', 'Energy Drinks', 'Bottled Water'] },
     { name: 'Groceries', emoji: '🛒', color: '#ffa94d',
-      subs: ['Vegetables', 'Fruits', 'Dairy', 'Staples', 'Household'] },
+      subs: ['Vegetables', 'Detergent', 'Dish Wash', 'Cleaning Supplies', 'Soap & Sanitizer', 'Household'] },
+    { name: 'Fruits', emoji: '🍎', color: '#fb7185',
+      subs: ['Daily', 'Seasonal', 'Dry Fruits', 'Imported'] },
     { name: 'Transport', emoji: '🚗', color: '#4cc9f0',
       subs: ['Bike', 'Fuel', 'Auto', 'Cab', 'Bus', 'Train / Metro', 'Flight', 'Parking'] },
     { name: 'Bills & Utilities', emoji: '💡', color: '#fab005',
@@ -213,8 +215,57 @@
       showOnboarding();
     } else {
       if (state.categories.length === 0) await seedCategories();
+      await migrateCategories();
       showApp();
     }
+  }
+
+  const CATS_VERSION = 2;
+  async function migrateCategories() {
+    const v = await dbGet('settings', 'catsVersion');
+    if ((v?.value || 1) >= CATS_VERSION) return;
+
+    const groceries = state.categories.find(c => c.name === 'Groceries');
+    let fruits = state.categories.find(c => c.name === 'Fruits');
+    const oldFruitsSub = groceries?.subs.find(s => s.name === 'Fruits');
+
+    if (!fruits) {
+      fruits = {
+        id: uid(),
+        name: 'Fruits',
+        emoji: '🍎',
+        color: '#fb7185',
+        subs: ['Daily', 'Seasonal', 'Dry Fruits', 'Imported']
+          .map(n => ({ id: uid(), name: n })),
+      };
+      const groceriesIdx = state.categories.findIndex(c => c.name === 'Groceries');
+      const insertAt = groceriesIdx >= 0 ? groceriesIdx + 1 : state.categories.length;
+      state.categories.splice(insertAt, 0, fruits);
+      await dbPut('categories', fruits);
+    }
+
+    if (groceries) {
+      const drop = new Set(['Fruits', 'Dairy', 'Staples']);
+      groceries.subs = groceries.subs.filter(s => !drop.has(s.name));
+      const have = new Set(groceries.subs.map(s => s.name));
+      ['Detergent', 'Dish Wash', 'Cleaning Supplies', 'Soap & Sanitizer'].forEach(n => {
+        if (!have.has(n)) groceries.subs.push({ id: uid(), name: n });
+      });
+      await dbPut('categories', groceries);
+    }
+
+    if (oldFruitsSub && fruits) {
+      const newSub = fruits.subs[0];
+      for (const e of state.expenses) {
+        if (e.subId === oldFruitsSub.id) {
+          e.categoryId = fruits.id;
+          e.subId = newSub.id;
+          await dbPut('expenses', e);
+        }
+      }
+    }
+
+    await dbPut('settings', { key: 'catsVersion', value: CATS_VERSION });
   }
 
   async function seedCategories() {
