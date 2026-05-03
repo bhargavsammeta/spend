@@ -2,7 +2,7 @@
    Network-first: always pull fresh content when online so app updates
    land immediately. Falls back to cache only when offline. */
 
-const CACHE = 'spend-v15';
+const CACHE = 'spend-v16';
 const ASSETS = [
   './',
   './index.html',

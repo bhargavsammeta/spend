@@ -7,61 +7,66 @@
   'use strict';
 
   // -------------------- Default categories --------------------
+  // Order = display order (most common first).
   const DEFAULT_CATS = [
-    { name: 'Food', emoji: '🍽️', color: '#a04848',
+    { name: 'Food', emoji: '🍽️', color: '#c44545',
       subs: ['Veg', 'Non-Veg', 'Tiffin', 'Fast Food', 'Snacks', 'Sweets / Desserts'] },
-    { name: 'Beverages', emoji: '🥤', color: '#5a8b85',
-      subs: ['Coconut Water', 'Buttermilk', 'Milkshakes', 'Juices', 'Tea / Coffee', 'Soft Drinks', 'Energy Drinks', 'Bottled Water'] },
-    { name: 'Groceries', emoji: '🛒', color: '#b58339',
-      subs: ['Vegetables', 'Detergent', 'Dish Wash', 'Cleaning Supplies', 'Soap & Sanitizer', 'Household'] },
-    { name: 'Fruits', emoji: '🍎', color: '#8d3a47',
-      subs: ['Daily', 'Seasonal', 'Dry Fruits', 'Imported'] },
-    { name: 'Transport', emoji: '🚗', color: '#4a6885',
+    { name: 'Transport', emoji: '🚗', color: '#2d63a8',
       subs: ['Bike', 'Fuel', 'Auto', 'Cab', 'Bus', 'Train / Metro', 'Flight', 'Parking'] },
-    { name: 'Bills & Utilities', emoji: '💡', color: '#c89a3e',
+    { name: 'Beverages', emoji: '🥤', color: '#20897a',
+      subs: ['Coconut Water', 'Buttermilk', 'Milkshakes', 'Juices', 'Tea / Coffee', 'Soft Drinks', 'Energy Drinks', 'Bottled Water'] },
+    { name: 'Groceries', emoji: '🛒', color: '#d39728',
+      subs: ['Vegetables', 'Detergent', 'Dish Wash', 'Cleaning Supplies', 'Soap & Sanitizer', 'Household'] },
+    { name: 'Fruits', emoji: '🍎', color: '#a93151',
+      subs: ['Daily', 'Seasonal', 'Dry Fruits', 'Imported'] },
+    { name: 'Bills & Utilities', emoji: '💡', color: '#e0a91a',
       subs: ['Electricity', 'Water', 'Internet', 'Mobile Recharge', 'Gas', 'Subscriptions'] },
-    { name: 'Rent & Housing', emoji: '🏠', color: '#6e4a7d',
+    { name: 'Rent & Housing', emoji: '🏠', color: '#6f3d85',
       subs: ['Rent', 'Maintenance', 'Repairs'] },
-    { name: 'Health', emoji: '💊', color: '#618451',
+    { name: 'Health', emoji: '💊', color: '#4a824a',
       subs: ['Medicines', 'Doctor', 'Gym', 'Supplements'] },
-    { name: 'Shopping', emoji: '🛍️', color: '#9d567a',
+    { name: 'Shopping', emoji: '🛍️', color: '#be4b81',
       subs: ['Clothes', 'Footwear', 'Electronics', 'Accessories'] },
-    { name: 'Entertainment', emoji: '🎬', color: '#5d8083',
+    { name: 'Entertainment', emoji: '🎬', color: '#347c8d',
       subs: ['Movies', 'Games', 'Events', 'Streaming'] },
-    { name: 'Personal Care', emoji: '💇', color: '#8f6e93',
+    { name: 'Personal Care', emoji: '💇', color: '#8b4a9d',
       subs: ['Salon / Haircut', 'Skincare', 'Toiletries'] },
-    { name: 'Education', emoji: '📚', color: '#6c8aa0',
+    { name: 'Education', emoji: '📚', color: '#557da6',
       subs: ['Books', 'Courses', 'Stationery'] },
-    { name: 'Travel', emoji: '✈️', color: '#936239',
+    { name: 'Travel', emoji: '✈️', color: '#b8632a',
       subs: ['Hotels', 'Tickets', 'Activities'] },
-    { name: 'Gifts & Donations', emoji: '🎁', color: '#b08948',
+    { name: 'Gifts & Donations', emoji: '🎁', color: '#cd9824',
       subs: ['Gifts', 'Charity'] },
-    { name: 'Misc', emoji: '✨', color: '#7d7163',
+    { name: 'Misc', emoji: '✨', color: '#7d7167',
       subs: ['Other'] },
   ];
 
+  const DEFAULT_ORDER = {};
+  DEFAULT_CATS.forEach((c, i) => { DEFAULT_ORDER[c.name] = (i + 1) * 10; });
+
   const COLOR_PALETTE = [
-    '#a04848','#5a8b85','#b58339','#8d3a47','#4a6885','#c89a3e',
-    '#6e4a7d','#618451','#9d567a','#5d8083','#8f6e93','#6c8aa0',
-    '#936239','#b08948','#7d7163','#5a4742'
+    '#c44545','#2d63a8','#20897a','#d39728','#a93151','#e0a91a',
+    '#6f3d85','#4a824a','#be4b81','#347c8d','#8b4a9d','#557da6',
+    '#b8632a','#cd9824','#7d7167','#5a4742'
   ];
 
-  const COLOR_MIGRATION_V3 = {
-    '#ff6b6b': '#a04848',
-    '#4ecdc4': '#5a8b85',
-    '#ffa94d': '#b58339',
-    '#fb7185': '#8d3a47',
-    '#4cc9f0': '#4a6885',
-    '#fab005': '#c89a3e',
-    '#845ef7': '#6e4a7d',
-    '#51cf66': '#618451',
-    '#f06595': '#9d567a',
-    '#22b8cf': '#5d8083',
-    '#cc5de8': '#8f6e93',
-    '#3bc9db': '#6c8aa0',
-    '#ff8787': '#936239',
-    '#fcc419': '#b08948',
-    '#868e96': '#7d7163',
+  // Maps both the original brights and the v3 muted set to the v4 rich set.
+  const COLOR_MIGRATION_V4 = {
+    '#ff6b6b': '#c44545', '#a04848': '#c44545',
+    '#4ecdc4': '#20897a', '#5a8b85': '#20897a',
+    '#ffa94d': '#d39728', '#b58339': '#d39728',
+    '#fb7185': '#a93151', '#8d3a47': '#a93151',
+    '#4cc9f0': '#2d63a8', '#4a6885': '#2d63a8',
+    '#fab005': '#e0a91a', '#c89a3e': '#e0a91a',
+    '#845ef7': '#6f3d85', '#6e4a7d': '#6f3d85',
+    '#51cf66': '#4a824a', '#618451': '#4a824a',
+    '#f06595': '#be4b81', '#9d567a': '#be4b81',
+    '#22b8cf': '#347c8d', '#5d8083': '#347c8d',
+    '#cc5de8': '#8b4a9d', '#8f6e93': '#8b4a9d',
+    '#3bc9db': '#557da6', '#6c8aa0': '#557da6',
+    '#ff8787': '#b8632a', '#936239': '#b8632a',
+    '#fcc419': '#cd9824', '#b08948': '#cd9824',
+    '#868e96': '#7d7167', '#7d7163': '#7d7167',
   };
 
   const CURRENCY_SYMBOLS = { INR: '₹', USD: '$' };
@@ -222,6 +227,13 @@
     return sym + Math.round(n).toLocaleString();
   }
   function symbol() { return CURRENCY_SYMBOLS[state.currency] || ''; }
+  function focusAmount(sel) {
+    const el = $(sel);
+    if (!el) return;
+    el.offsetHeight; // flush layout so focus works on freshly-shown sheets
+    try { el.focus({ preventScroll: true }); } catch { el.focus(); }
+    if (typeof el.select === 'function') el.select();
+  }
   function expensesForMonth(k) {
     return state.expenses.filter(e => e.date && e.date.startsWith(k));
   }
@@ -259,11 +271,12 @@
     } else {
       if (state.categories.length === 0) await seedCategories();
       await migrateCategories();
+      sortCats();
       showApp();
     }
   }
 
-  const CATS_VERSION = 3;
+  const CATS_VERSION = 4;
   async function migrateCategories() {
     const v = await dbGet('settings', 'catsVersion');
     const cur = v?.value || 1;
@@ -311,13 +324,19 @@
       }
     }
 
-    if (cur < 3) {
+    if (cur < 4) {
       for (const cat of state.categories) {
-        const next = COLOR_MIGRATION_V3[(cat.color || '').toLowerCase()];
+        let changed = false;
+        if (cat.order == null) {
+          cat.order = DEFAULT_ORDER[cat.name] ?? 200;
+          changed = true;
+        }
+        const next = COLOR_MIGRATION_V4[(cat.color || '').toLowerCase()];
         if (next && cat.color !== next) {
           cat.color = next;
-          await dbPut('categories', cat);
+          changed = true;
         }
+        if (changed) await dbPut('categories', cat);
       }
     }
 
@@ -325,14 +344,19 @@
   }
 
   async function seedCategories() {
-    state.categories = DEFAULT_CATS.map(c => ({
+    state.categories = DEFAULT_CATS.map((c, i) => ({
       id: uid(),
       name: c.name,
       emoji: c.emoji,
       color: c.color,
+      order: (i + 1) * 10,
       subs: c.subs.map(s => ({ id: uid(), name: s })),
     }));
     for (const c of state.categories) await dbPut('categories', c);
+  }
+
+  function sortCats() {
+    state.categories.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
   }
 
   // -------------------- Onboarding --------------------
@@ -359,6 +383,8 @@
       await dbPut('settings', { key: 'currency', value: chosen });
       await dbPut('settings', { key: 'allowance', value: amt });
       await seedCategories();
+      sortCats();
+      await dbPut('settings', { key: 'catsVersion', value: CATS_VERSION });
       $('#onboarding').classList.add('hidden');
       showApp();
     });
@@ -462,7 +488,7 @@
     $('#cash-delete').classList.toggle('hidden', mode !== 'edit');
     $('#cash-sheet').classList.toggle('use-mode', state.cashSheet.type === 'use');
     $$('.cash-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === state.cashSheet.type));
-    setTimeout(() => $('#cash-amount').focus(), 100);
+    focusAmount('#cash-amount');
   }
   function closeCashSheet() { $('#cash-sheet').classList.add('hidden'); }
 
@@ -509,7 +535,7 @@
     $('#extra-note').value = extra?.note || '';
     $('#extra-date').value = extra?.date || todayISO();
     $('#extra-delete').classList.toggle('hidden', mode !== 'edit');
-    setTimeout(() => $('#extra-amount').focus(), 100);
+    focusAmount('#extra-amount');
   }
   function closeExtraSheet() { $('#extra-sheet').classList.add('hidden'); }
 
@@ -1322,7 +1348,7 @@
     $('#sheet-delete').classList.toggle('hidden', mode !== 'edit');
     renderSheetCats();
     renderSheetSubs();
-    setTimeout(() => $('#sheet-amount').focus(), 100);
+    focusAmount('#sheet-amount');
   }
   function closeExpenseSheet() { $('#sheet').classList.add('hidden'); }
 
