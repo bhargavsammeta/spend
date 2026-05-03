@@ -983,12 +983,126 @@
     $('#ins-avg-tx').textContent = fmtMoney(exps.length > 0 ? total / exps.length : 0);
 
     renderInsTip(exps, total, days, range);
-    renderInsCats(exps, total);
+    renderInsPatterns(exps, total, range);
     renderInsSubs(exps, total);
     renderInsWeekday(exps, days);
-    renderInsDaily();
     renderInsMoM();
     renderInsBiggest(exps);
+  }
+
+  function renderInsPatterns(exps, total, range) {
+    const list = $('#ins-patterns');
+    list.innerHTML = '';
+    if (exps.length === 0) {
+      list.innerHTML = `<li class="empty">Not enough data yet — add a few expenses.</li>`;
+      return;
+    }
+
+    const patterns = [];
+
+    // Time of day distribution
+    const tod = { morning: 0, afternoon: 0, evening: 0, night: 0 };
+    const todLabels = { morning: 'mornings', afternoon: 'afternoons', evening: 'evenings', night: 'late nights' };
+    exps.forEach(e => {
+      const h = parseInt((e.time || '12:00').slice(0, 2), 10);
+      if (h < 6) tod.night += e.amount || 0;
+      else if (h < 12) tod.morning += e.amount || 0;
+      else if (h < 18) tod.afternoon += e.amount || 0;
+      else tod.evening += e.amount || 0;
+    });
+    const todTotal = tod.morning + tod.afternoon + tod.evening + tod.night;
+    if (todTotal > 0) {
+      const peak = Object.entries(tod).sort((a, b) => b[1] - a[1])[0];
+      const peakPct = Math.round((peak[1] / todTotal) * 100);
+      patterns.push({
+        icon: '🕒',
+        title: 'When you spend',
+        text: `${peakPct}% in ${todLabels[peak[0]]} · ${fmtMoney(peak[1])}`,
+      });
+    }
+
+    // Weekday vs Weekend (per-day average)
+    const wd = { wkday: { sum: 0, days: new Set() }, wkend: { sum: 0, days: new Set() } };
+    exps.forEach(e => {
+      if (!e.date) return;
+      const d = new Date(e.date + 'T12:00:00');
+      const day = d.getDay();
+      const isWeekend = day === 0 || day === 6;
+      const bucket = isWeekend ? wd.wkend : wd.wkday;
+      bucket.sum += e.amount || 0;
+      bucket.days.add(e.date);
+    });
+    const wkdayAvg = wd.wkday.days.size ? wd.wkday.sum / wd.wkday.days.size : 0;
+    const wkendAvg = wd.wkend.days.size ? wd.wkend.sum / wd.wkend.days.size : 0;
+    if (wkdayAvg > 0 || wkendAvg > 0) {
+      patterns.push({
+        icon: '📅',
+        title: 'Weekday vs weekend',
+        text: `${fmtMoney(wkdayAvg)}/day weekday · ${fmtMoney(wkendAvg)}/day weekend`,
+      });
+    }
+
+    // Cash vs Digital
+    const cashSum = sumAmounts(exps.filter(e => e.isCash));
+    const digSum = sumAmounts(exps.filter(e => !e.isCash));
+    const sumTotal = cashSum + digSum;
+    if (sumTotal > 0) {
+      const cashPct = Math.round((cashSum / sumTotal) * 100);
+      patterns.push({
+        icon: '💵',
+        title: 'Cash vs digital',
+        text: `${cashPct}% cash · ${fmtMoney(cashSum)} of ${fmtMoney(sumTotal)}`,
+      });
+    }
+
+    // Month-over-month delta (only meaningful for current month range)
+    if (range === 'month') {
+      const k = monthKey(new Date());
+      const prevD = new Date();
+      prevD.setMonth(prevD.getMonth() - 1);
+      const prevK = monthKey(prevD);
+      const cur = sumAmounts(getAllExpensesForMonth(k));
+      const prev = sumAmounts(getAllExpensesForMonth(prevK));
+      if (prev > 0) {
+        const deltaPct = Math.round(((cur - prev) / prev) * 100);
+        const direction = deltaPct >= 0 ? 'more' : 'less';
+        patterns.push({
+          icon: deltaPct >= 0 ? '📈' : '📉',
+          title: 'vs Last month',
+          text: `${Math.abs(deltaPct)}% ${direction} so far · ${fmtMoney(cur)} vs ${fmtMoney(prev)}`,
+        });
+      }
+    }
+
+    // Heaviest single day
+    const byDay = new Map();
+    exps.forEach(e => {
+      if (!e.date) return;
+      byDay.set(e.date, (byDay.get(e.date) || 0) + (e.amount || 0));
+    });
+    const topDay = Array.from(byDay.entries()).sort((a, b) => b[1] - a[1])[0];
+    if (topDay) {
+      const d = new Date(topDay[0] + 'T12:00:00');
+      const dayName = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
+      patterns.push({
+        icon: '🔥',
+        title: 'Heaviest day',
+        text: `${dayName} · ${fmtMoney(topDay[1])}`,
+      });
+    }
+
+    patterns.forEach(p => {
+      const li = document.createElement('li');
+      li.className = 'pattern-row';
+      li.innerHTML = `
+        <span class="pattern-icon">${p.icon}</span>
+        <div class="pattern-body">
+          <div class="pattern-title">${escapeHtml(p.title)}</div>
+          <div class="pattern-text">${escapeHtml(p.text)}</div>
+        </div>
+      `;
+      list.appendChild(li);
+    });
   }
 
   function renderInsTip(exps, total, days, range) {
@@ -1031,35 +1145,6 @@
       }
     }
     tip.classList.add('hidden');
-  }
-
-  function renderInsCats(exps, total) {
-    const list = $('#ins-cats');
-    list.innerHTML = '';
-    const items = aggregateByCategory(exps).slice(0, 8);
-    if (items.length === 0) {
-      list.innerHTML = `<li class="empty">No data for this period.</li>`;
-      return;
-    }
-    const max = items[0].amount || 1;
-    items.forEach(({ cat, amount }) => {
-      const pct = total > 0 ? (amount / total) * 100 : 0;
-      const w = (amount / max) * 100;
-      const li = document.createElement('li');
-      li.className = 'bar-item';
-      li.innerHTML = `
-        <div class="bar-head">
-          <div class="bar-head-left">
-            <div class="bar-emoji" style="background:${cat.color}22;color:${cat.color}">${cat.emoji || '•'}</div>
-            <div class="bar-name">${escapeHtml(cat.name)}</div>
-          </div>
-          <div class="bar-amt">${fmtMoney(amount)}</div>
-        </div>
-        <div class="bar-track"><div class="bar-fill" style="width:${w}%;background:${cat.color}"></div></div>
-        <div class="bar-meta"><span>${Math.round(pct)}% of total</span></div>
-      `;
-      list.appendChild(li);
-    });
   }
 
   function renderInsSubs(exps, total) {
@@ -1135,56 +1220,6 @@
       `;
       wrap.appendChild(col);
     });
-  }
-
-  function renderInsDaily() {
-    const wrap = $('#ins-daily');
-    wrap.innerHTML = '';
-    const k = monthKey(new Date());
-    const dim = daysInMonth(k);
-    const exps = getAllExpensesForMonth(k);
-    const sums = new Array(dim).fill(0);
-    exps.forEach(e => {
-      const day = parseInt((e.date || '').slice(8, 10), 10);
-      if (day >= 1 && day <= dim) sums[day - 1] += e.amount || 0;
-    });
-    const max = Math.max(1, ...sums);
-    const today = new Date().getDate();
-    let peakIdx = 0;
-    sums.forEach((v, i) => { if (v > sums[peakIdx]) peakIdx = i; });
-    const peakAmt = sums[peakIdx];
-
-    $('#ins-daily-hint').textContent = peakAmt > 0
-      ? `Peak: day ${peakIdx + 1} · ${fmtMoneyCompact(peakAmt)}`
-      : 'No expenses yet';
-
-    const bars = document.createElement('div');
-    bars.className = 'daily-bars';
-    sums.forEach((v, i) => {
-      const day = i + 1;
-      const isToday = day === today;
-      const isFuture = day > today;
-      const h = (v / max) * 100;
-      const cls = ['daily-bar'];
-      if (v === 0) cls.push('empty');
-      if (isToday) cls.push('today');
-      if (isFuture) cls.push('future');
-      const bar = document.createElement('div');
-      bar.className = cls.join(' ');
-      bar.style.height = `${Math.max(v > 0 ? 4 : 2, h)}%`;
-      bar.title = `Day ${day}: ${fmtMoney(v)}`;
-      bars.appendChild(bar);
-    });
-    wrap.appendChild(bars);
-
-    const axis = document.createElement('div');
-    axis.className = 'daily-axis';
-    [1, Math.ceil(dim/4), Math.ceil(dim/2), Math.ceil(3*dim/4), dim].forEach(d => {
-      const sp = document.createElement('span');
-      sp.textContent = d;
-      axis.appendChild(sp);
-    });
-    wrap.appendChild(axis);
   }
 
   function renderInsMoM() {

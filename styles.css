@@ -812,6 +812,39 @@ input[type="number"] { -moz-appearance: textfield; }
   font-variation-settings: 'opsz' 32;
 }
 
+.patterns-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 4px;
+}
+.pattern-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.pattern-icon {
+  font-size: 22px;
+  line-height: 1.1;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.pattern-body { flex: 1; min-width: 0; }
+.pattern-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 3px;
+}
+.pattern-text {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+  letter-spacing: -0.1px;
+}
+
 .bar-list { display: flex; flex-direction: column; gap: 14px; }
 .bar-item { display: flex; flex-direction: column; gap: 6px; }
 .bar-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
