@@ -1721,6 +1721,21 @@
     }[c]));
   }
 
+  // -------------------- Keyboard offset --------------------
+  // iOS keyboards float over the page without resizing the viewport, so the
+  // sheet's action row would otherwise sit under them. Track the visual
+  // viewport and expose the offset as --kb-offset for CSS.
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const updateKb = () => {
+      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty('--kb-offset', offset + 'px');
+    };
+    vv.addEventListener('resize', updateKb);
+    vv.addEventListener('scroll', updateKb);
+    updateKb();
+  }
+
   // -------------------- Service worker --------------------
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

@@ -395,6 +395,8 @@ ul { list-style: none; }
   touch-action: manipulation;
 }
 .fab:active { transform: scale(0.93); }
+/* When any sheet is open, the FAB must not float over the modal. */
+body:has(.sheet:not(.hidden)) .fab { display: none; }
 
 /* ---------- Buttons ---------- */
 .primary-btn {
@@ -517,7 +519,8 @@ ul { list-style: none; }
 .sheet {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  /* Above tab bar (50) and FAB (49) so the sheet owns the screen while open. */
+  z-index: 60;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -530,15 +533,21 @@ ul { list-style: none; }
   animation: fadeIn .2s ease;
 }
 .sheet-panel {
-  position: relative;
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Lift the panel above the on-screen keyboard (set from JS via visualViewport). */
+  bottom: var(--kb-offset, 0px);
+  margin: 0 auto;
   width: 100%;
   max-width: 560px;
   background: var(--bg-elev);
   border-top-left-radius: 28px;
   border-top-right-radius: 28px;
   padding: 8px 18px calc(20px + var(--safe-bot));
-  max-height: 92dvh;
+  max-height: calc(92dvh - var(--kb-offset, 0px));
   overflow-y: auto;
+  transition: bottom .15s ease;
   animation: slideUp .25s ease;
   border: 1px solid var(--border-strong);
   border-bottom: none;
