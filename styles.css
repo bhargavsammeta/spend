@@ -943,6 +943,42 @@ input[type="number"] { -moz-appearance: textfield; }
 .cash-amt.add { color: var(--accent); }
 .cash-amt.use { color: #d99aa6; }
 
+.cash-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  vertical-align: middle;
+  margin-right: 4px;
+  border: 1px solid rgba(197,251,69,0.20);
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.tx-row.cash-tx .cat-dot {
+  position: relative;
+}
+.tx-row.cash-tx .cat-dot::after {
+  content: "₹";
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bg-elev);
+  font-family: var(--serif);
+}
+
 .sheet.use-mode .cash-type-btn.active[data-type="use"] {
   background: rgba(141,58,71,0.22);
   color: #d99aa6;

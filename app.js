@@ -168,7 +168,7 @@
     sheet: { mode: null, expense: null, catId: null, subId: null },
     catSheet: { mode: null, cat: null, color: null },
     extraSheet: { mode: null, extra: null },
-    cashSheet: { mode: null, entry: null, type: 'add' },
+    cashSheet: { mode: null, entry: null, type: 'add', catId: null, subId: null },
   };
 
   // -------------------- Helpers --------------------
@@ -240,8 +240,36 @@
   function extrasForMonth(k) {
     return state.extras.filter(x => x.month === k);
   }
+  function cashAddsForMonth(k) {
+    return state.cash.filter(c => c.type !== 'use' && c.date && c.date.startsWith(k));
+  }
+  function cashUsesForMonth(k) {
+    return state.cash.filter(c => c.type === 'use' && c.date && c.date.startsWith(k));
+  }
   function allowanceForMonth(k) {
-    return (state.allowance || 0) + sumAmounts(extrasForMonth(k));
+    return (state.allowance || 0)
+      + sumAmounts(extrasForMonth(k))
+      + sumAmounts(cashAddsForMonth(k));
+  }
+  function cashUseAsExpense(c) {
+    return {
+      id: 'cash:' + c.id,
+      cashId: c.id,
+      isCash: true,
+      amount: c.amount,
+      categoryId: c.categoryId,
+      subId: c.subId,
+      note: c.note,
+      date: c.date,
+      time: c.time,
+      createdAt: c.createdAt,
+    };
+  }
+  function getAllExpenses() {
+    return [...state.expenses, ...state.cash.filter(c => c.type === 'use').map(cashUseAsExpense)];
+  }
+  function getAllExpensesForMonth(k) {
+    return [...expensesForMonth(k), ...cashUsesForMonth(k).map(cashUseAsExpense)];
   }
   function sumAmounts(arr) { return arr.reduce((a, b) => a + (b.amount || 0), 0); }
   function cashBalance() {
@@ -456,13 +484,19 @@
       const isUse = c.type === 'use';
       const sign = isUse ? '−' : '+';
       const timeStr = formatTime(c.time);
+      const cat = isUse ? state.categories.find(x => x.id === c.categoryId) : null;
+      const sub = cat?.subs.find(s => s.id === c.subId);
+      const title = c.note || sub?.name || cat?.name || (isUse ? 'Used cash' : 'Added cash');
+      const meta = isUse
+        ? `${cat ? escapeHtml(cat.name) : '—'}${sub ? ' · ' + escapeHtml(sub.name) : ''}${timeStr ? ' · ' + timeStr : ''}`
+        : `Loaded into wallet${timeStr ? ' · ' + timeStr : ''}`;
       const li = document.createElement('li');
       li.className = 'tx-row cash-row' + (isUse ? ' use' : ' add');
       li.innerHTML = `
-        <div class="cash-dot ${isUse ? 'use' : 'add'}">${isUse ? '−' : '+'}</div>
+        <div class="cash-dot ${isUse ? 'use' : 'add'}"${cat ? ` style="background:${cat.color}22;color:${cat.color}"` : ''}>${cat?.emoji || (isUse ? '−' : '+')}</div>
         <div class="tx-info">
-          <div class="tx-title">${escapeHtml(c.note || (isUse ? 'Used cash' : 'Added cash'))}</div>
-          <div class="tx-meta">${isUse ? 'Spent from wallet' : 'Loaded into wallet'}${timeStr ? ' · ' + timeStr : ''}</div>
+          <div class="tx-title">${escapeHtml(title)}</div>
+          <div class="tx-meta">${meta}</div>
         </div>
         <div class="tx-amt cash-amt ${isUse ? 'use' : 'add'}">${sign}${fmtMoney(c.amount)}</div>
       `;
@@ -475,6 +509,8 @@
     state.cashSheet.mode = mode;
     state.cashSheet.entry = entry;
     state.cashSheet.type = entry?.type || type || 'add';
+    state.cashSheet.catId = entry?.categoryId || (state.cashSheet.type === 'use' ? state.categories[0]?.id : null) || null;
+    state.cashSheet.subId = entry?.subId || null;
     $('#cash-sheet').classList.remove('hidden');
     $('#cash-sheet-title').textContent = mode === 'edit'
       ? (state.cashSheet.type === 'use' ? 'Edit cash used' : 'Edit cash added')
@@ -488,19 +524,70 @@
     $('#cash-delete').classList.toggle('hidden', mode !== 'edit');
     $('#cash-sheet').classList.toggle('use-mode', state.cashSheet.type === 'use');
     $$('.cash-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === state.cashSheet.type));
+    renderCashSheetCategorySection();
     focusAmount('#cash-amount');
+  }
+
+  function renderCashSheetCategorySection() {
+    const section = $('#cash-cat-section');
+    if (!section) return;
+    const isUse = state.cashSheet.type === 'use';
+    section.classList.toggle('hidden', !isUse);
+    if (!isUse) return;
+    const catRow = $('#cash-cats');
+    catRow.innerHTML = '';
+    state.categories.forEach(c => {
+      const card = document.createElement('button');
+      const selected = c.id === state.cashSheet.catId;
+      card.className = 'cat-card' + (selected ? ' selected' : '');
+      card.innerHTML = `
+        <span class="ic" style="color:${c.color}">${c.emoji || '•'}</span>
+        <span class="nm">${escapeHtml(c.name)}</span>
+      `;
+      card.addEventListener('click', () => {
+        state.cashSheet.catId = c.id;
+        state.cashSheet.subId = null;
+        renderCashSheetCategorySection();
+      });
+      catRow.appendChild(card);
+    });
+    const subRow = $('#cash-subs');
+    subRow.innerHTML = '';
+    const cat = state.categories.find(c => c.id === state.cashSheet.catId);
+    if (!cat || !cat.subs.length) {
+      subRow.innerHTML = `<span class="muted small">No sub-categories</span>`;
+      return;
+    }
+    cat.subs.forEach(s => {
+      const chip = document.createElement('button');
+      chip.className = 'sub-chip' + (s.id === state.cashSheet.subId ? ' selected' : '');
+      chip.textContent = s.name;
+      chip.addEventListener('click', () => {
+        state.cashSheet.subId = s.id;
+        renderCashSheetCategorySection();
+      });
+      subRow.appendChild(chip);
+    });
   }
   function closeCashSheet() { $('#cash-sheet').classList.add('hidden'); }
 
   async function saveCash() {
     const amt = parseFloat($('#cash-amount').value);
     if (!amt || amt <= 0) return toast('Enter an amount');
+    const isUse = state.cashSheet.type === 'use';
+    if (isUse) {
+      if (!state.cashSheet.catId) return toast('Pick a category');
+      const cat = state.categories.find(c => c.id === state.cashSheet.catId);
+      if (cat?.subs.length && !state.cashSheet.subId) return toast('Pick a sub-category');
+    }
     const c = state.cashSheet.entry || { id: uid(), createdAt: Date.now() };
     c.amount = amt;
     c.type = state.cashSheet.type;
     c.note = $('#cash-note').value.trim();
     c.date = $('#cash-date').value || todayISO();
     c.time = $('#cash-time').value || nowTime();
+    c.categoryId = isUse ? state.cashSheet.catId : null;
+    c.subId = isUse ? state.cashSheet.subId : null;
     await dbPut('cash', c);
     if (state.cashSheet.mode === 'edit') {
       const idx = state.cash.findIndex(x => x.id === c.id);
@@ -595,7 +682,7 @@
   // ---- HOME ----
   function renderHome() {
     const k = monthKey(new Date());
-    const exps = expensesForMonth(k);
+    const exps = getAllExpensesForMonth(k);
     const total = sumAmounts(exps);
     const monthExtras = extrasForMonth(k);
     const extrasTotal = sumAmounts(monthExtras);
@@ -639,7 +726,7 @@
     const list = $('#recent-list');
     if (!list) return;
     list.innerHTML = '';
-    const all = state.expenses.slice().sort((a, b) =>
+    const all = getAllExpenses().sort((a, b) =>
       (b.date || '').localeCompare(a.date || '') || (b.createdAt - a.createdAt)
     ).slice(0, 10);
 
@@ -650,8 +737,6 @@
 
     let lastDate = '';
     all.forEach(e => {
-      const cat = state.categories.find(c => c.id === e.categoryId);
-      const sub = cat?.subs.find(s => s.id === e.subId);
       if (e.date !== lastDate) {
         const head = document.createElement('li');
         head.className = 'date-head';
@@ -659,20 +744,33 @@
         list.appendChild(head);
         lastDate = e.date;
       }
-      const timeStr = formatTime(e.time);
-      const li = document.createElement('li');
-      li.className = 'tx-row';
-      li.innerHTML = `
-        <div class="cat-dot" style="background:${(cat?.color || '#888')}22;color:${cat?.color || '#888'}">${cat?.emoji || '•'}</div>
-        <div class="tx-info">
-          <div class="tx-title">${escapeHtml(e.note || sub?.name || cat?.name || 'Expense')}</div>
-          <div class="tx-meta">${escapeHtml(cat?.name || '—')}${sub ? ' · ' + escapeHtml(sub.name) : ''}${timeStr ? ' · ' + timeStr : ''}</div>
-        </div>
-        <div class="tx-amt">${fmtMoney(e.amount)}</div>
-      `;
-      li.addEventListener('click', () => openExpenseSheet({ mode: 'edit', expense: e }));
-      list.appendChild(li);
+      list.appendChild(renderTxRow(e));
     });
+  }
+
+  function renderTxRow(e) {
+    const cat = state.categories.find(c => c.id === e.categoryId);
+    const sub = cat?.subs.find(s => s.id === e.subId);
+    const timeStr = formatTime(e.time);
+    const li = document.createElement('li');
+    li.className = 'tx-row' + (e.isCash ? ' cash-tx' : '');
+    li.innerHTML = `
+      <div class="cat-dot" style="background:${(cat?.color || '#888')}22;color:${cat?.color || '#888'}">${cat?.emoji || '•'}</div>
+      <div class="tx-info">
+        <div class="tx-title">${escapeHtml(e.note || sub?.name || cat?.name || 'Expense')}</div>
+        <div class="tx-meta">${e.isCash ? '<span class="cash-badge">CASH</span> ' : ''}${escapeHtml(cat?.name || '—')}${sub ? ' · ' + escapeHtml(sub.name) : ''}${timeStr ? ' · ' + timeStr : ''}</div>
+      </div>
+      <div class="tx-amt">${fmtMoney(e.amount)}</div>
+    `;
+    li.addEventListener('click', () => {
+      if (e.isCash) {
+        const entry = state.cash.find(c => c.id === e.cashId);
+        if (entry) openCashSheet({ mode: 'edit', entry });
+      } else {
+        openExpenseSheet({ mode: 'edit', expense: e });
+      }
+    });
+    return li;
   }
 
   function renderDonut(items, total) {
@@ -736,7 +834,7 @@
       return;
     }
     const k = monthKey(new Date());
-    const exps = expensesForMonth(k);
+    const exps = getAllExpensesForMonth(k);
     items.forEach(({ cat, amount }) => {
       const pct = total > 0 ? (amount / total) * 100 : 0;
       const expanded = state.expandedCat === cat.id;
@@ -797,7 +895,7 @@
       return { start, end: now, label: 'Last 3 months' };
     }
     // all
-    const dates = state.expenses.map(e => e.date).filter(Boolean).sort();
+    const dates = getAllExpenses().map(e => e.date).filter(Boolean).sort();
     const startStr = dates[0];
     const start = startStr ? new Date(startStr + 'T00:00:00') : new Date(now.getFullYear(), now.getMonth(), 1);
     return { start, end: now, label: 'All time' };
@@ -807,7 +905,7 @@
     const { start, end } = rangeWindow(range);
     const startStr = isoDate(start);
     const endStr = isoDate(end);
-    return state.expenses.filter(e => e.date && e.date >= startStr && e.date <= endStr);
+    return getAllExpenses().filter(e => e.date && e.date >= startStr && e.date <= endStr);
   }
 
   function isoDate(d) {
@@ -992,7 +1090,7 @@
     wrap.innerHTML = '';
     const k = monthKey(new Date());
     const dim = daysInMonth(k);
-    const exps = expensesForMonth(k);
+    const exps = getAllExpensesForMonth(k);
     const sums = new Array(dim).fill(0);
     exps.forEach(e => {
       const day = parseInt((e.date || '').slice(8, 10), 10);
@@ -1046,7 +1144,7 @@
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       months.push(monthKey(d));
     }
-    const sums = months.map(k => sumAmounts(expensesForMonth(k)));
+    const sums = months.map(k => sumAmounts(getAllExpensesForMonth(k)));
     const max = Math.max(1, ...sums);
     let peakIdx = 0;
     sums.forEach((v, i) => { if (v > sums[peakIdx]) peakIdx = i; });
@@ -1118,7 +1216,7 @@
       picker.appendChild(b);
     });
 
-    const exps = expensesForMonth(state.viewMonth)
+    const exps = getAllExpensesForMonth(state.viewMonth)
       .slice().sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
     const total = sumAmounts(exps);
     $('#hist-month-label').textContent = monthLabel(state.viewMonth);
@@ -1133,8 +1231,6 @@
 
     let lastDate = '';
     exps.forEach(e => {
-      const cat = state.categories.find(c => c.id === e.categoryId);
-      const sub = cat?.subs.find(s => s.id === e.subId);
       if (e.date !== lastDate) {
         const head = document.createElement('li');
         head.className = 'date-head';
@@ -1142,24 +1238,14 @@
         list.appendChild(head);
         lastDate = e.date;
       }
-      const timeStr = formatTime(e.time);
-      const li = document.createElement('li');
-      li.className = 'tx-row';
-      li.innerHTML = `
-        <div class="cat-dot" style="background:${(cat?.color || '#888')}22;color:${cat?.color || '#888'}">${cat?.emoji || '•'}</div>
-        <div class="tx-info">
-          <div class="tx-title">${escapeHtml(e.note || sub?.name || cat?.name || 'Expense')}</div>
-          <div class="tx-meta">${escapeHtml(cat?.name || '—')}${sub ? ' · ' + escapeHtml(sub.name) : ''}${timeStr ? ' · ' + timeStr : ''}</div>
-        </div>
-        <div class="tx-amt">${fmtMoney(e.amount)}</div>
-      `;
-      li.addEventListener('click', () => openExpenseSheet({ mode: 'edit', expense: e }));
-      list.appendChild(li);
+      list.appendChild(renderTxRow(e));
     });
   }
 
   function collectMonths() {
-    const set = new Set(state.expenses.map(e => e.date?.slice(0, 7)).filter(Boolean));
+    const set = new Set();
+    state.expenses.forEach(e => { if (e.date) set.add(e.date.slice(0, 7)); });
+    state.cash.forEach(c => { if (c.date) set.add(c.date.slice(0, 7)); });
     set.add(monthKey(new Date()));
     return Array.from(set).sort().reverse();
   }
@@ -1319,6 +1405,9 @@
     $$('.cash-type-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         state.cashSheet.type = btn.dataset.type;
+        if (state.cashSheet.type === 'use' && !state.cashSheet.catId) {
+          state.cashSheet.catId = state.categories[0]?.id || null;
+        }
         $$('.cash-type-btn').forEach(b => b.classList.toggle('active', b === btn));
         $('#cash-sheet').classList.toggle('use-mode', state.cashSheet.type === 'use');
         $('#cash-sheet-title').textContent = state.cashSheet.mode === 'edit'
@@ -1327,6 +1416,7 @@
         if (state.cashSheet.mode !== 'edit') {
           $('#cash-sheet-save').textContent = state.cashSheet.type === 'use' ? 'Subtract' : 'Add';
         }
+        renderCashSheetCategorySection();
       });
     });
   }
