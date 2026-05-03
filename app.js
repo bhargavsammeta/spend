@@ -44,17 +44,6 @@
     '#fcc419','#868e96','#20c997','#e64980'
   ];
 
-  const DEFAULT_GOALS = [
-    { name: 'Emergency Fund', emoji: '🚨', color: '#fb7185' },
-    { name: 'Travel',         emoji: '✈️', color: '#4cc9f0' },
-    { name: 'Gadgets',        emoji: '📱', color: '#845ef7' },
-    { name: 'Investments',    emoji: '📈', color: '#51cf66' },
-    { name: 'Vehicle',        emoji: '🚗', color: '#ffa94d' },
-    { name: 'Big Purchase',   emoji: '🎁', color: '#fab005' },
-    { name: 'Education',      emoji: '🎓', color: '#22b8cf' },
-    { name: 'General',        emoji: '💰', color: '#c5fb45' },
-  ];
-
   const CURRENCY_SYMBOLS = { INR: '₹', USD: '$' };
 
   // -------------------- IndexedDB --------------------
@@ -137,16 +126,12 @@
     allowance: 0,
     categories: [],
     expenses: [],
-    goals: [],
-    savings: [],
     viewMonth: monthKey(new Date()),
     selectedScreen: 'home',
     expandedCat: null,
-    expandedGoal: null,
+    insightsRange: 'month',
     sheet: { mode: null, expense: null, catId: null, subId: null },
     catSheet: { mode: null, cat: null, color: null },
-    savSheet: { mode: null, entry: null, goalId: null, source: 'extra', kind: 'deposit' },
-    goalSheet: { mode: null, goal: null },
   };
 
   // -------------------- Helpers --------------------
@@ -189,9 +174,6 @@
     const d = parseMonthKey(k);
     return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
   }
-  function isCurrentMonth(k) {
-    return k === monthKey(new Date());
-  }
   function fmtMoney(n) {
     const sym = CURRENCY_SYMBOLS[state.currency] || '';
     const v = Math.round((n + Number.EPSILON) * 100) / 100;
@@ -200,21 +182,18 @@
       : { minimumFractionDigits: v % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 };
     return sym + v.toLocaleString(undefined, opts);
   }
+  function fmtMoneyCompact(n) {
+    const sym = CURRENCY_SYMBOLS[state.currency] || '';
+    const v = Math.abs(n);
+    if (v >= 100000) return sym + (n / 100000).toFixed(1).replace(/\.0$/, '') + 'L';
+    if (v >= 1000)   return sym + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return sym + Math.round(n).toLocaleString();
+  }
   function symbol() { return CURRENCY_SYMBOLS[state.currency] || ''; }
   function expensesForMonth(k) {
     return state.expenses.filter(e => e.date && e.date.startsWith(k));
   }
-  function savingsForMonth(k) {
-    return state.savings.filter(s => s.date && s.date.startsWith(k));
-  }
-  function savingsForGoal(goalId) {
-    return state.savings.filter(s => s.goalId === goalId);
-  }
   function sumAmounts(arr) { return arr.reduce((a, b) => a + (b.amount || 0), 0); }
-  function signedAmount(s) {
-    return (s.kind === 'withdraw') ? -(s.amount || 0) : (s.amount || 0);
-  }
-  function sumNet(arr) { return arr.reduce((a, s) => a + signedAmount(s), 0); }
 
   // -------------------- Initialization --------------------
   async function init() {
@@ -224,35 +203,18 @@
     const allow = await dbGet('settings', 'allowance');
     const cats = await dbAll('categories');
     const exps = await dbAll('expenses');
-    const goals = await dbAll('savingsGoals');
-    const savs = await dbAll('savingsEntries');
 
     if (cur) state.currency = cur.value;
     if (allow) state.allowance = allow.value;
     state.categories = cats;
     state.expenses = exps;
-    state.goals = goals;
-    state.savings = savs;
 
     if (!cur || !allow) {
       showOnboarding();
     } else {
       if (state.categories.length === 0) await seedCategories();
-      if (state.goals.length === 0) await seedGoals();
       showApp();
     }
-  }
-
-  async function seedGoals() {
-    state.goals = DEFAULT_GOALS.map(g => ({
-      id: uid(),
-      name: g.name,
-      emoji: g.emoji,
-      color: g.color,
-      monthlyTarget: 0,
-      target: 0,
-    }));
-    for (const g of state.goals) await dbPut('savingsGoals', g);
   }
 
   async function seedCategories() {
@@ -290,7 +252,6 @@
       await dbPut('settings', { key: 'currency', value: chosen });
       await dbPut('settings', { key: 'allowance', value: amt });
       await seedCategories();
-      await seedGoals();
       $('#onboarding').classList.add('hidden');
       showApp();
     });
@@ -303,6 +264,7 @@
     bindFab();
     bindSheets();
     bindSettings();
+    bindInsights();
     renderAll();
   }
 
@@ -320,16 +282,12 @@
   }
 
   function bindFab() {
-    $('#fab').addEventListener('click', () => {
-      if (state.selectedScreen === 'savings') openSavingsSheet({ mode: 'create' });
-      else openExpenseSheet({ mode: 'create' });
-    });
+    $('#fab').addEventListener('click', () => openExpenseSheet({ mode: 'create' }));
   }
 
   // -------------------- Render --------------------
   function renderAll() {
     if (state.selectedScreen === 'home') renderHome();
-    if (state.selectedScreen === 'savings') renderSavings();
     if (state.selectedScreen === 'insights') renderInsights();
     if (state.selectedScreen === 'history') renderHistory();
     if (state.selectedScreen === 'settings') renderSettings();
@@ -340,30 +298,16 @@
     const k = monthKey(new Date());
     const exps = expensesForMonth(k);
     const total = sumAmounts(exps);
-    const monthSavs = savingsForMonth(k);
-    const savedThisMonth = sumNet(monthSavs);
-    const savedFromAllowance = sumNet(monthSavs.filter(s => s.source === 'allowance'));
     const allowance = state.allowance || 0;
     const pct = allowance > 0 ? Math.min(100, (total / allowance) * 100) : 0;
     const today = new Date();
     const dim = daysInMonth(k);
     const elapsed = today.getDate();
     const daysLeft = Math.max(0, dim - elapsed);
-    const remaining = Math.max(0, allowance - total - Math.max(0, savedFromAllowance));
+    const remaining = Math.max(0, allowance - total);
     const pace = daysLeft > 0 ? remaining / daysLeft : 0;
 
-    // Build augmented item list: expense categories + synthetic Savings
     const items = aggregateByCategory(exps);
-    const fromAllowanceClamped = Math.max(0, savedFromAllowance);
-    if (fromAllowanceClamped > 0) {
-      items.push({
-        cat: { id: '__savings__', name: 'Savings', emoji: '💰', color: '#c5fb45' },
-        amount: fromAllowanceClamped,
-        isSavings: true,
-      });
-      items.sort((a, b) => b.amount - a.amount);
-    }
-    const used = total + fromAllowanceClamped;
 
     $('#month-name').textContent = monthLabel(k);
     $('#hero-spent').textContent = fmtMoney(total);
@@ -375,46 +319,51 @@
     $('#hero-pace').textContent = `${fmtMoney(pace)}/day`;
     $('#hero-days').textContent = daysLeft;
     $('#total-tx').textContent = `${exps.length} transaction${exps.length === 1 ? '' : 's'}`;
-    $('#donut-total').textContent = fmtMoney(used);
+    $('#donut-total').textContent = fmtMoney(total);
 
-    renderQuickInsight(exps, total, allowance, elapsed, dim);
-    renderDonut(items, used);
-    renderCatList(items, used);
+    renderDonut(items, total);
+    renderCatList(items, total);
+    renderRecent();
   }
 
-  function renderQuickInsight(exps, total, allowance, elapsed, dim) {
-    const el = $('#quick-insight');
-    if (!exps.length || allowance <= 0) {
-      el.classList.add('hidden');
+  function renderRecent() {
+    const list = $('#recent-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const all = state.expenses.slice().sort((a, b) =>
+      (b.date || '').localeCompare(a.date || '') || (b.createdAt - a.createdAt)
+    ).slice(0, 10);
+
+    if (all.length === 0) {
+      list.innerHTML = `<li class="empty">No transactions yet.<br>Tap + to add one.</li>`;
       return;
     }
-    const expectedPace = (allowance / dim) * elapsed;
-    const ratio = total / Math.max(1, expectedPace);
-    let cls = 'good', emoji = '✅', title = 'On track', body = '';
 
-    if (total >= allowance) {
-      cls = 'bad'; emoji = '🚨';
-      title = 'Allowance exceeded';
-      body = `You're ${fmtMoney(total - allowance)} over budget with ${dim - elapsed} days left.`;
-    } else if (ratio > 1.25) {
-      cls = 'bad'; emoji = '⚠️';
-      title = 'Spending too fast';
-      const projected = (total / elapsed) * dim;
-      body = `At this pace you'll hit ${fmtMoney(projected)} — ${fmtMoney(projected - allowance)} over allowance.`;
-    } else if (ratio > 1.05) {
-      cls = 'warn'; emoji = '⏱️';
-      title = 'A bit ahead of pace';
-      body = `You've spent ${Math.round(ratio * 100 - 100)}% more than expected by day ${elapsed}.`;
-    } else if (ratio < 0.75 && elapsed > 5) {
-      cls = 'good'; emoji = '🎯';
-      title = 'Comfortably under pace';
-      body = `Spending ${Math.round((1 - ratio) * 100)}% less than expected. Nice.`;
-    } else {
-      title = 'On track';
-      body = `Pace looks healthy — ${fmtMoney(allowance - total)} left for ${dim - elapsed} days.`;
-    }
-    el.className = `insight-card ${cls}`;
-    el.innerHTML = `<span class="ic-emoji">${emoji}</span><div class="ic-body"><h3>${title}</h3><p>${body}</p></div>`;
+    let lastDate = '';
+    all.forEach(e => {
+      const cat = state.categories.find(c => c.id === e.categoryId);
+      const sub = cat?.subs.find(s => s.id === e.subId);
+      if (e.date !== lastDate) {
+        const head = document.createElement('li');
+        head.className = 'date-head';
+        head.textContent = formatDateLabel(e.date);
+        list.appendChild(head);
+        lastDate = e.date;
+      }
+      const timeStr = formatTime(e.time);
+      const li = document.createElement('li');
+      li.className = 'tx-row';
+      li.innerHTML = `
+        <div class="cat-dot" style="background:${(cat?.color || '#888')}22;color:${cat?.color || '#888'}">${cat?.emoji || '•'}</div>
+        <div class="tx-info">
+          <div class="tx-title">${escapeHtml(e.note || sub?.name || cat?.name || 'Expense')}</div>
+          <div class="tx-meta">${escapeHtml(cat?.name || '—')}${sub ? ' · ' + escapeHtml(sub.name) : ''}${timeStr ? ' · ' + timeStr : ''}</div>
+        </div>
+        <div class="tx-amt">${fmtMoney(e.amount)}</div>
+      `;
+      li.addEventListener('click', () => openExpenseSheet({ mode: 'edit', expense: e }));
+      list.appendChild(li);
+    });
   }
 
   function renderDonut(items, total) {
@@ -479,7 +428,7 @@
     }
     const k = monthKey(new Date());
     const exps = expensesForMonth(k);
-    items.forEach(({ cat, amount, isSavings }) => {
+    items.forEach(({ cat, amount }) => {
       const pct = total > 0 ? (amount / total) * 100 : 0;
       const expanded = state.expandedCat === cat.id;
       const li = document.createElement('li');
@@ -487,7 +436,7 @@
       li.innerHTML = `
         <div class="cat-dot" style="background:${cat.color}22;color:${cat.color}">${cat.emoji || '•'}</div>
         <div class="cat-info">
-          <div class="cat-name">${escapeHtml(cat.name)}${isSavings ? ' <span class="muted small">from allowance</span>' : ''}</div>
+          <div class="cat-name">${escapeHtml(cat.name)}</div>
           <div class="cat-sub">${Math.round(pct)}% of total</div>
         </div>
         <div>
@@ -503,33 +452,13 @@
       if (expanded) {
         const sb = document.createElement('div');
         sb.className = 'sub-breakdown';
-        if (isSavings) {
-          // Per-goal breakdown for from-allowance savings
-          const fromAllow = savingsForMonth(k).filter(s => s.source === 'allowance');
-          const map = new Map();
-          fromAllow.forEach(s => {
-            map.set(s.goalId, (map.get(s.goalId) || 0) + signedAmount(s));
-          });
-          const breakdown = Array.from(map.entries())
-            .map(([goalId, amt]) => ({ goal: state.goals.find(g => g.id === goalId), amount: amt }))
-            .filter(x => x.amount !== 0)
-            .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-          if (breakdown.length === 0) {
-            sb.innerHTML = `<div class="muted small">No goals</div>`;
-          } else {
-            sb.innerHTML = breakdown.map(({ goal, amount }) =>
-              `<div class="sub-row"><span class="sn">${escapeHtml(goal?.name || 'Unknown')}</span><span>${fmtMoney(amount)}</span></div>`
-            ).join('');
-          }
+        const subs = aggregateBySub(exps, cat.id);
+        if (subs.length === 0) {
+          sb.innerHTML = `<div class="muted small">No sub-category breakdown</div>`;
         } else {
-          const subs = aggregateBySub(exps, cat.id);
-          if (subs.length === 0) {
-            sb.innerHTML = `<div class="muted small">No sub-category breakdown</div>`;
-          } else {
-            sb.innerHTML = subs.map(({ sub, amount }) =>
-              `<div class="sub-row"><span class="sn">${escapeHtml(sub.name)}</span><span>${fmtMoney(amount)}</span></div>`
-            ).join('');
-          }
+          sb.innerHTML = subs.map(({ sub, amount }) =>
+            `<div class="sub-row"><span class="sn">${escapeHtml(sub.name)}</span><span>${fmtMoney(amount)}</span></div>`
+          ).join('');
         }
         list.appendChild(sb);
       }
@@ -537,243 +466,332 @@
   }
 
   // ---- INSIGHTS ----
-  function renderInsights() {
-    const k = monthKey(new Date());
-    const exps = expensesForMonth(k);
-    const total = sumAmounts(exps);
-    const allowance = state.allowance || 0;
-    const today = new Date();
-    const dim = daysInMonth(k);
-    const elapsed = today.getDate();
-    const daysLeft = Math.max(0, dim - elapsed);
-
-    const prevK = prevMonthKey(k);
-    const prevExps = expensesForMonth(prevK);
-    const prevTotal = sumAmounts(prevExps);
-
-    const list = $('#insights-list');
-    list.innerHTML = '';
-
-    const insights = [];
-
-    // 1) Overall budget health
-    if (allowance > 0) {
-      const projected = elapsed > 0 ? (total / elapsed) * dim : 0;
-      if (total >= allowance) {
-        insights.push({
-          cls: 'bad', emoji: '🚨',
-          title: 'Allowance exceeded',
-          body: `You've spent ${fmtMoney(total)} of your ${fmtMoney(allowance)} allowance with ${daysLeft} days left. Pause non-essentials.`,
-        });
-      } else if (projected > allowance * 1.1) {
-        const cap = daysLeft > 0 ? (allowance - total) / daysLeft : 0;
-        insights.push({
-          cls: 'warn', emoji: '⚠️',
-          title: 'On pace to overshoot',
-          body: `Projected month-end: ${fmtMoney(projected)} (${fmtMoney(projected - allowance)} over). Try to keep daily spend under ${fmtMoney(cap)}.`,
-        });
-      } else if (projected < allowance * 0.85 && elapsed > 7) {
-        insights.push({
-          cls: 'good', emoji: '🎯',
-          title: 'Tracking well below allowance',
-          body: `Projected month-end: ${fmtMoney(projected)} — about ${fmtMoney(allowance - projected)} under budget. Consider saving the surplus.`,
-        });
-      } else if (allowance - total > 0 && daysLeft > 0) {
-        const cap = (allowance - total) / daysLeft;
-        insights.push({
-          cls: 'good', emoji: '✅',
-          title: 'Healthy daily budget',
-          body: `You can spend up to ${fmtMoney(cap)} per day for the next ${daysLeft} day${daysLeft === 1 ? '' : 's'} and stay on budget.`,
-        });
-      }
-    } else {
-      insights.push({
-        cls: 'warn', emoji: '💡',
-        title: 'Set an allowance',
-        body: 'Add a monthly allowance in Settings to unlock pace and budget insights.',
+  function bindInsights() {
+    $$('#ins-range .seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.insightsRange = btn.dataset.range;
+        $$('#ins-range .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+        renderInsights();
       });
-    }
-
-    // 2) Top categories
-    const byCat = aggregateByCategory(exps);
-    if (byCat.length > 0) {
-      const top = byCat[0];
-      const share = total > 0 ? (top.amount / total) * 100 : 0;
-      if (share > 35) {
-        insights.push({
-          cls: 'warn', emoji: top.cat.emoji || '📊',
-          title: `${top.cat.name} is ${Math.round(share)}% of your spend`,
-          body: `That's a large concentration. If it's discretionary, try setting a soft cap of ${fmtMoney(top.amount * 0.7)} next month.`,
-        });
-      } else {
-        insights.push({
-          cls: 'good', emoji: top.cat.emoji || '📊',
-          title: `Top category: ${top.cat.name}`,
-          body: `${fmtMoney(top.amount)} so far (${Math.round(share)}% of total). Within a reasonable share.`,
-        });
-      }
-    }
-
-    // 3) Month-over-month comparison per category
-    if (prevExps.length > 0 && byCat.length > 0) {
-      const prevMap = new Map();
-      prevExps.forEach(e => prevMap.set(e.categoryId, (prevMap.get(e.categoryId) || 0) + e.amount));
-      const changes = [];
-      byCat.forEach(({ cat, amount }) => {
-        const prev = prevMap.get(cat.id) || 0;
-        if (prev > 0) {
-          const change = ((amount - prev) / prev) * 100;
-          changes.push({ cat, amount, prev, change });
-        }
-      });
-      const surged = changes.filter(c => c.change >= 50).sort((a, b) => b.change - a.change);
-      const dropped = changes.filter(c => c.change <= -30).sort((a, b) => a.change - b.change);
-      if (surged.length) {
-        const c = surged[0];
-        insights.push({
-          cls: 'warn', emoji: '📈',
-          title: `${c.cat.name} jumped ${Math.round(c.change)}% vs last month`,
-          body: `${fmtMoney(c.prev)} → ${fmtMoney(c.amount)}. Worth a quick look at why.`,
-        });
-      }
-      if (dropped.length) {
-        const c = dropped[0];
-        insights.push({
-          cls: 'good', emoji: '📉',
-          title: `${c.cat.name} down ${Math.round(Math.abs(c.change))}% vs last month`,
-          body: `${fmtMoney(c.prev)} → ${fmtMoney(c.amount)}. Keep it up.`,
-        });
-      }
-    }
-
-    // 4) Sub-category insights — find biggest sub spend across all
-    const subTotals = [];
-    state.categories.forEach(cat => {
-      cat.subs.forEach(sub => {
-        const amt = exps.filter(e => e.categoryId === cat.id && e.subId === sub.id).reduce((a, b) => a + b.amount, 0);
-        if (amt > 0) subTotals.push({ cat, sub, amount: amt });
-      });
-    });
-    subTotals.sort((a, b) => b.amount - a.amount);
-    if (subTotals.length > 0 && total > 0) {
-      const top = subTotals[0];
-      const share = (top.amount / total) * 100;
-      if (share > 20) {
-        insights.push({
-          cls: 'warn', emoji: '🔍',
-          title: `${top.sub.name} (${top.cat.name}) is ${Math.round(share)}% of spend`,
-          body: `Single sub-category eating a big chunk. Consider whether this can be reduced.`,
-        });
-      }
-    }
-
-    // 5) Beverage / fast food specific guidance (lifestyle)
-    const bev = state.categories.find(c => c.name === 'Beverages');
-    const food = state.categories.find(c => c.name === 'Food');
-    if (bev) {
-      const bevAmt = exps.filter(e => e.categoryId === bev.id).reduce((a, b) => a + b.amount, 0);
-      if (total > 0 && bevAmt / total > 0.12) {
-        insights.push({
-          cls: 'warn', emoji: '🥤',
-          title: 'High spend on beverages',
-          body: `${fmtMoney(bevAmt)} on drinks (${Math.round(bevAmt / total * 100)}% of total). Switching some to home-made could save ~${fmtMoney(bevAmt * 0.4)}.`,
-        });
-      }
-    }
-    if (food) {
-      const ff = food.subs.find(s => /fast food/i.test(s.name));
-      if (ff) {
-        const ffAmt = exps.filter(e => e.categoryId === food.id && e.subId === ff.id).reduce((a, b) => a + b.amount, 0);
-        if (total > 0 && ffAmt / total > 0.15) {
-          insights.push({
-            cls: 'warn', emoji: '🍔',
-            title: 'Fast food adding up',
-            body: `${fmtMoney(ffAmt)} on fast food this month (${Math.round(ffAmt / total * 100)}% of spend). Cooking 2 more meals/week at home could free ~${fmtMoney(ffAmt * 0.3)}.`,
-          });
-        }
-      }
-    }
-
-    // 6) Frequency insight
-    if (exps.length > 15 && elapsed > 0) {
-      const perDay = exps.length / elapsed;
-      if (perDay > 3) {
-        insights.push({
-          cls: 'warn', emoji: '🧾',
-          title: 'Lots of small purchases',
-          body: `Averaging ${perDay.toFixed(1)} transactions/day. Frequent small spends often hide leaks.`,
-        });
-      }
-    }
-
-    // 7) Savings recommendations
-    const monthSavs = savingsForMonth(k);
-    const monthSavTotal = sumNet(monthSavs);
-    const monthSavFromAllow = sumNet(monthSavs.filter(s => s.source === 'allowance'));
-    const totalMonthlyTarget = state.goals.reduce((a, g) => a + (g.monthlyTarget || 0), 0);
-    const projectedSpend = elapsed > 0 ? (total / elapsed) * dim : 0;
-    const projectedSurplus = Math.max(0, allowance - projectedSpend - monthSavFromAllow);
-
-    if (allowance > 0 && monthSavTotal === 0 && elapsed > 5) {
-      const sugg = Math.round(allowance * 0.10);
-      insights.push({
-        cls: 'warn', emoji: '🐷',
-        title: 'No savings yet this month',
-        body: `Try setting aside ${fmtMoney(sugg)} (10% of allowance) to start. Open the Savings tab to add to a goal.`,
-      });
-    } else if (totalMonthlyTarget > 0 && monthSavTotal < totalMonthlyTarget * 0.5 && elapsed > 15) {
-      insights.push({
-        cls: 'warn', emoji: '🎯',
-        title: 'Behind on savings target',
-        body: `Saved ${fmtMoney(monthSavTotal)} of ${fmtMoney(totalMonthlyTarget)} target. ${fmtMoney(totalMonthlyTarget - monthSavTotal)} to go with ${daysLeft} day${daysLeft === 1 ? '' : 's'} left.`,
-      });
-    }
-    if (allowance > 0 && projectedSurplus > allowance * 0.15 && elapsed > 7) {
-      const sugg = Math.round(projectedSurplus * 0.7);
-      insights.push({
-        cls: 'good', emoji: '💰',
-        title: `You could save about ${fmtMoney(sugg)} more`,
-        body: `At your spending pace, ${fmtMoney(projectedSurplus)} of allowance will be unused. Add a savings entry with "From allowance" to lock it in.`,
-      });
-    }
-    if (totalMonthlyTarget > 0 && monthSavTotal >= totalMonthlyTarget) {
-      insights.push({
-        cls: 'good', emoji: '🏆',
-        title: 'Monthly savings target hit',
-        body: `Saved ${fmtMoney(monthSavTotal)} this month — you're on top of your goals.`,
-      });
-    }
-
-    // 8) Comparison with last month total
-    if (prevTotal > 0) {
-      const change = ((total - prevTotal) / prevTotal) * 100;
-      if (Math.abs(change) >= 15) {
-        insights.push({
-          cls: change > 0 ? 'warn' : 'good',
-          emoji: change > 0 ? '📊' : '📊',
-          title: `${change > 0 ? 'Up' : 'Down'} ${Math.round(Math.abs(change))}% vs last month`,
-          body: `${monthLabel(prevK)}: ${fmtMoney(prevTotal)} → ${monthLabel(k)}: ${fmtMoney(total)}.`,
-        });
-      }
-    }
-
-    if (insights.length === 0) {
-      list.innerHTML = `<div class="card empty">Add a few expenses and insights will appear here.</div>`;
-      return;
-    }
-
-    insights.forEach(ins => {
-      const el = document.createElement('div');
-      el.className = `insight-card ${ins.cls}`;
-      el.innerHTML = `<span class="ic-emoji">${ins.emoji}</span><div class="ic-body"><h3>${escapeHtml(ins.title)}</h3><p>${escapeHtml(ins.body)}</p></div>`;
-      list.appendChild(el);
     });
   }
 
-  function prevMonthKey(k) {
-    const d = parseMonthKey(k);
-    d.setMonth(d.getMonth() - 1);
-    return monthKey(d);
+  function rangeWindow(range) {
+    const now = new Date();
+    if (range === 'month') {
+      const k = monthKey(now);
+      const start = parseMonthKey(k);
+      return { start, end: now, label: monthLabel(k) };
+    }
+    if (range === '3m') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+      return { start, end: now, label: 'Last 3 months' };
+    }
+    // all
+    const dates = state.expenses.map(e => e.date).filter(Boolean).sort();
+    const startStr = dates[0];
+    const start = startStr ? new Date(startStr + 'T00:00:00') : new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start, end: now, label: 'All time' };
+  }
+
+  function expensesInRange(range) {
+    const { start, end } = rangeWindow(range);
+    const startStr = isoDate(start);
+    const endStr = isoDate(end);
+    return state.expenses.filter(e => e.date && e.date >= startStr && e.date <= endStr);
+  }
+
+  function isoDate(d) {
+    const off = d.getTimezoneOffset();
+    return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+  }
+
+  function daysBetween(a, b) {
+    const ms = b.setHours(0,0,0,0) - new Date(a).setHours(0,0,0,0);
+    return Math.max(1, Math.round(ms / 86400000) + 1);
+  }
+
+  function renderInsights() {
+    const range = state.insightsRange;
+    const exps = expensesInRange(range);
+    const total = sumAmounts(exps);
+    const win = rangeWindow(range);
+    const days = daysBetween(win.start, new Date(win.end));
+
+    $('#ins-total').textContent = fmtMoney(total);
+    $('#ins-count').textContent = exps.length;
+    $('#ins-avg-day').textContent = fmtMoney(days > 0 ? total / days : 0);
+    $('#ins-avg-tx').textContent = fmtMoney(exps.length > 0 ? total / exps.length : 0);
+
+    renderInsTip(exps, total, days, range);
+    renderInsCats(exps, total);
+    renderInsSubs(exps, total);
+    renderInsWeekday(exps, days);
+    renderInsDaily();
+    renderInsMoM();
+    renderInsBiggest(exps);
+  }
+
+  function renderInsTip(exps, total, days, range) {
+    const tip = $('#ins-tip');
+    if (exps.length === 0) {
+      tip.classList.add('hidden');
+      return;
+    }
+    if (range === 'month') {
+      const k = monthKey(new Date());
+      const dim = daysInMonth(k);
+      const elapsed = new Date().getDate();
+      const projected = elapsed > 0 ? (total / elapsed) * dim : 0;
+      const allowance = state.allowance || 0;
+      if (allowance > 0 && projected > allowance) {
+        const over = projected - allowance;
+        tip.className = 'insight-card bad';
+        tip.innerHTML = `<span class="ic-emoji">⚠️</span><div class="ic-body"><h3>You're trending over by ${fmtMoney(over)}</h3><p>At your current pace you'll spend ${fmtMoney(projected)} this month — ${Math.round((projected/allowance)*100)}% of your ${fmtMoney(allowance)} allowance.</p></div>`;
+        tip.classList.remove('hidden');
+        return;
+      }
+      if (allowance > 0 && projected < allowance * 0.85) {
+        const surplus = allowance - projected;
+        tip.className = 'insight-card good';
+        tip.innerHTML = `<span class="ic-emoji">✨</span><div class="ic-body"><h3>You're on track to save ${fmtMoney(surplus)}</h3><p>Projected spend ${fmtMoney(projected)} vs ${fmtMoney(allowance)} allowance.</p></div>`;
+        tip.classList.remove('hidden');
+        return;
+      }
+    }
+    // Top-category callout (always useful)
+    const cats = aggregateByCategory(exps);
+    if (cats.length && total > 0) {
+      const top = cats[0];
+      const pct = Math.round((top.amount / total) * 100);
+      if (pct >= 30) {
+        tip.className = 'insight-card warn';
+        tip.innerHTML = `<span class="ic-emoji">${top.cat.emoji || '📊'}</span><div class="ic-body"><h3>${escapeHtml(top.cat.name)} is ${pct}% of your spend</h3><p>${fmtMoney(top.amount)} in ${top.cat.name.toLowerCase()} ${range === 'month' ? 'this month' : range === '3m' ? 'over 3 months' : 'overall'}. Worth a closer look.</p></div>`;
+        tip.classList.remove('hidden');
+        return;
+      }
+    }
+    tip.classList.add('hidden');
+  }
+
+  function renderInsCats(exps, total) {
+    const list = $('#ins-cats');
+    list.innerHTML = '';
+    const items = aggregateByCategory(exps).slice(0, 8);
+    if (items.length === 0) {
+      list.innerHTML = `<li class="empty">No data for this period.</li>`;
+      return;
+    }
+    const max = items[0].amount || 1;
+    items.forEach(({ cat, amount }) => {
+      const pct = total > 0 ? (amount / total) * 100 : 0;
+      const w = (amount / max) * 100;
+      const li = document.createElement('li');
+      li.className = 'bar-item';
+      li.innerHTML = `
+        <div class="bar-head">
+          <div class="bar-head-left">
+            <div class="bar-emoji" style="background:${cat.color}22;color:${cat.color}">${cat.emoji || '•'}</div>
+            <div class="bar-name">${escapeHtml(cat.name)}</div>
+          </div>
+          <div class="bar-amt">${fmtMoney(amount)}</div>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${w}%;background:${cat.color}"></div></div>
+        <div class="bar-meta"><span>${Math.round(pct)}% of total</span></div>
+      `;
+      list.appendChild(li);
+    });
+  }
+
+  function renderInsSubs(exps, total) {
+    const list = $('#ins-subs');
+    list.innerHTML = '';
+    const map = new Map();
+    exps.forEach(e => {
+      if (!e.subId) return;
+      const cat = state.categories.find(c => c.id === e.categoryId);
+      const sub = cat?.subs.find(s => s.id === e.subId);
+      if (!sub || !cat) return;
+      const key = e.subId;
+      const cur = map.get(key) || { cat, sub, amount: 0, count: 0 };
+      cur.amount += e.amount || 0;
+      cur.count += 1;
+      map.set(key, cur);
+    });
+    const items = Array.from(map.values()).sort((a, b) => b.amount - a.amount).slice(0, 6);
+    if (items.length === 0) {
+      list.innerHTML = `<li class="empty">No sub-category data yet.</li>`;
+      return;
+    }
+    const max = items[0].amount || 1;
+    items.forEach(({ cat, sub, amount, count }) => {
+      const w = (amount / max) * 100;
+      const pct = total > 0 ? Math.round((amount / total) * 100) : 0;
+      const li = document.createElement('li');
+      li.className = 'bar-item';
+      li.innerHTML = `
+        <div class="bar-head">
+          <div class="bar-head-left">
+            <div class="bar-emoji" style="background:${cat.color}22;color:${cat.color}">${cat.emoji || '•'}</div>
+            <div>
+              <div class="bar-name">${escapeHtml(sub.name)}</div>
+              <div class="muted small">${escapeHtml(cat.name)} · ${count} tx</div>
+            </div>
+          </div>
+          <div class="bar-amt">${fmtMoney(amount)}</div>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${w}%;background:${cat.color}"></div></div>
+        <div class="bar-meta"><span>${pct}% of total</span></div>
+      `;
+      list.appendChild(li);
+    });
+  }
+
+  function renderInsWeekday(exps) {
+    const wrap = $('#ins-weekday');
+    wrap.innerHTML = '';
+    const labels = ['S','M','T','W','T','F','S'];
+    const sums = [0,0,0,0,0,0,0];
+    const counts = [0,0,0,0,0,0,0];
+    exps.forEach(e => {
+      if (!e.date) return;
+      const d = new Date(e.date + 'T12:00:00').getDay();
+      sums[d] += e.amount || 0;
+      counts[d] += 1;
+    });
+    const max = Math.max(1, ...sums);
+    let topIdx = 0;
+    sums.forEach((v, i) => { if (v > sums[topIdx]) topIdx = i; });
+    const fullNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    $('#ins-wkday-hint').textContent = sums[topIdx] > 0 ? `${fullNames[topIdx]} is heaviest` : '';
+
+    sums.forEach((v, i) => {
+      const h = (v / max) * 100;
+      const col = document.createElement('div');
+      col.className = 'bg-col' + (i === topIdx && v > 0 ? ' highlight' : '');
+      col.innerHTML = `
+        <div class="bg-val">${v > 0 ? fmtMoneyCompact(v) : ''}</div>
+        <div class="bg-bar-wrap"><div class="bg-bar${v === 0 ? ' empty' : ''}" style="height:${Math.max(2, h)}%"></div></div>
+        <div class="bg-label">${labels[i]}</div>
+      `;
+      wrap.appendChild(col);
+    });
+  }
+
+  function renderInsDaily() {
+    const wrap = $('#ins-daily');
+    wrap.innerHTML = '';
+    const k = monthKey(new Date());
+    const dim = daysInMonth(k);
+    const exps = expensesForMonth(k);
+    const sums = new Array(dim).fill(0);
+    exps.forEach(e => {
+      const day = parseInt((e.date || '').slice(8, 10), 10);
+      if (day >= 1 && day <= dim) sums[day - 1] += e.amount || 0;
+    });
+    const max = Math.max(1, ...sums);
+    const today = new Date().getDate();
+    let peakIdx = 0;
+    sums.forEach((v, i) => { if (v > sums[peakIdx]) peakIdx = i; });
+    const peakAmt = sums[peakIdx];
+
+    $('#ins-daily-hint').textContent = peakAmt > 0
+      ? `Peak: day ${peakIdx + 1} · ${fmtMoneyCompact(peakAmt)}`
+      : 'No expenses yet';
+
+    const bars = document.createElement('div');
+    bars.className = 'daily-bars';
+    sums.forEach((v, i) => {
+      const day = i + 1;
+      const isToday = day === today;
+      const isFuture = day > today;
+      const h = (v / max) * 100;
+      const cls = ['daily-bar'];
+      if (v === 0) cls.push('empty');
+      if (isToday) cls.push('today');
+      if (isFuture) cls.push('future');
+      const bar = document.createElement('div');
+      bar.className = cls.join(' ');
+      bar.style.height = `${Math.max(v > 0 ? 4 : 2, h)}%`;
+      bar.title = `Day ${day}: ${fmtMoney(v)}`;
+      bars.appendChild(bar);
+    });
+    wrap.appendChild(bars);
+
+    const axis = document.createElement('div');
+    axis.className = 'daily-axis';
+    [1, Math.ceil(dim/4), Math.ceil(dim/2), Math.ceil(3*dim/4), dim].forEach(d => {
+      const sp = document.createElement('span');
+      sp.textContent = d;
+      axis.appendChild(sp);
+    });
+    wrap.appendChild(axis);
+  }
+
+  function renderInsMoM() {
+    const wrap = $('#ins-mom');
+    wrap.innerHTML = '';
+    const now = new Date();
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(monthKey(d));
+    }
+    const sums = months.map(k => sumAmounts(expensesForMonth(k)));
+    const max = Math.max(1, ...sums);
+    let peakIdx = 0;
+    sums.forEach((v, i) => { if (v > sums[peakIdx]) peakIdx = i; });
+
+    const cur = sums[5];
+    const prev = sums[4];
+    if (prev > 0) {
+      const diff = cur - prev;
+      const pct = Math.round((diff / prev) * 100);
+      const sign = diff > 0 ? '+' : '';
+      const dir = diff > 0 ? 'more than' : 'less than';
+      $('#ins-mom-hint').textContent = `${sign}${pct}% ${dir} last month`;
+    } else {
+      $('#ins-mom-hint').textContent = '';
+    }
+
+    sums.forEach((v, i) => {
+      const h = (v / max) * 100;
+      const isCur = i === 5;
+      const col = document.createElement('div');
+      col.className = 'bg-col' + (isCur ? ' current' : '') + (i === peakIdx && v > 0 ? ' highlight' : '');
+      col.innerHTML = `
+        <div class="bg-val">${v > 0 ? fmtMoneyCompact(v) : ''}</div>
+        <div class="bg-bar-wrap"><div class="bg-bar${v === 0 ? ' empty' : ''}" style="height:${Math.max(2, h)}%"></div></div>
+        <div class="bg-label">${shortMonthLabel(months[i]).split(' ')[0]}</div>
+      `;
+      wrap.appendChild(col);
+    });
+  }
+
+  function renderInsBiggest(exps) {
+    const list = $('#ins-biggest');
+    list.innerHTML = '';
+    const top = exps.slice().sort((a, b) => (b.amount || 0) - (a.amount || 0)).slice(0, 5);
+    if (top.length === 0) {
+      list.innerHTML = `<li class="empty">No transactions in this period.</li>`;
+      return;
+    }
+    top.forEach(e => {
+      const cat = state.categories.find(c => c.id === e.categoryId);
+      const sub = cat?.subs.find(s => s.id === e.subId);
+      const li = document.createElement('li');
+      li.className = 'tx-row';
+      li.innerHTML = `
+        <div class="cat-dot" style="background:${(cat?.color || '#888')}22;color:${cat?.color || '#888'}">${cat?.emoji || '•'}</div>
+        <div class="tx-info">
+          <div class="tx-title">${escapeHtml(e.note || sub?.name || cat?.name || 'Expense')}</div>
+          <div class="tx-meta">${escapeHtml(cat?.name || '—')}${sub ? ' · ' + escapeHtml(sub.name) : ''} · ${formatDateLabel(e.date)}</div>
+        </div>
+        <div class="tx-amt">${fmtMoney(e.amount)}</div>
+      `;
+      li.addEventListener('click', () => openExpenseSheet({ mode: 'edit', expense: e }));
+      list.appendChild(li);
+    });
   }
 
   // ---- HISTORY ----
@@ -837,6 +855,7 @@
     return Array.from(set).sort().reverse();
   }
   function formatDateLabel(iso) {
+    if (!iso) return '';
     const d = new Date(iso + 'T00:00:00');
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const yest = new Date(today); yest.setDate(today.getDate() - 1);
@@ -879,7 +898,7 @@
       }
     });
 
-    $$('.seg-btn').forEach(b => {
+    $$('.seg-btn[data-cur]').forEach(b => {
       b.addEventListener('click', async () => {
         state.currency = b.dataset.cur;
         await dbPut('settings', { key: 'currency', value: state.currency });
@@ -974,35 +993,6 @@
     $('#cat-delete').addEventListener('click', deleteCategory);
     $('#sub-add').addEventListener('click', addSubInline);
     $('#sub-new').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addSubInline(); } });
-
-    // Savings entry sheet
-    $('#sav-cancel').addEventListener('click', closeSavingsSheet);
-    $('#sav-close').addEventListener('click', closeSavingsSheet);
-    $('.sheet-backdrop', $('#sav-sheet')).addEventListener('click', closeSavingsSheet);
-    $('#sav-sheet-save').addEventListener('click', saveSaving);
-    $('#sav-delete').addEventListener('click', deleteSaving);
-    $$('.sav-source-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.savSheet.source = btn.dataset.source;
-        renderSavSheetSource();
-      });
-    });
-    $$('.sav-kind-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.savSheet.kind = btn.dataset.kind;
-        renderSavSheetKind();
-      });
-    });
-
-    // Goal editor sheet
-    $('#goal-cancel').addEventListener('click', closeGoalSheet);
-    $('#goal-close').addEventListener('click', closeGoalSheet);
-    $('.sheet-backdrop', $('#goal-sheet')).addEventListener('click', closeGoalSheet);
-    $('#goal-sheet-save').addEventListener('click', saveGoal);
-    $('#goal-edit-delete').addEventListener('click', deleteGoal);
-
-    // Add goal button on Savings screen
-    $('#add-goal').addEventListener('click', () => openGoalSheet({ mode: 'create' }));
   }
 
   function openExpenseSheet({ mode, expense = null }) {
@@ -1198,329 +1188,6 @@
       state.expenses = state.expenses.filter(e => e.categoryId !== id);
     }
     closeCategorySheet();
-    renderAll();
-    toast('Deleted');
-  }
-
-  // -------------------- Savings --------------------
-  function renderSavings() {
-    const k = monthKey(new Date());
-    const monthSavs = savingsForMonth(k);
-    const monthTotal = sumNet(monthSavs);
-    const allTotal = sumNet(state.savings);
-    const totalMonthlyTarget = state.goals.reduce((a, g) => a + (g.monthlyTarget || 0), 0);
-    const monthPct = totalMonthlyTarget > 0
-      ? Math.min(100, (monthTotal / totalMonthlyTarget) * 100)
-      : 0;
-
-    $('#sav-month-total').textContent = fmtMoney(monthTotal);
-    $('#sav-all-total').textContent = fmtMoney(allTotal);
-    $('#sav-goal-count').textContent = state.goals.length;
-    $('#sav-month-target').textContent = totalMonthlyTarget > 0
-      ? `of ${fmtMoney(totalMonthlyTarget)} target`
-      : 'No monthly target set';
-    $('#sav-progress').style.width = `${monthPct}%`;
-    $('#sav-pct').textContent = totalMonthlyTarget > 0 ? `${Math.round(monthPct)}%` : '';
-
-    // Suggestion strip
-    const sug = $('#sav-suggestion');
-    const allowance = state.allowance || 0;
-    const expsTotal = sumAmounts(expensesForMonth(k));
-    const today = new Date();
-    const dim = daysInMonth(k);
-    const elapsed = today.getDate();
-    const projected = elapsed > 0 ? (expsTotal / elapsed) * dim : 0;
-    const monthFromAllowance = Math.max(0, sumNet(monthSavs.filter(s => s.source === 'allowance')));
-    const projectedSurplus = Math.max(0, allowance - projected - monthFromAllowance);
-    if (allowance > 0 && projectedSurplus > allowance * 0.10 && elapsed > 5) {
-      const suggested = Math.round(projectedSurplus * 0.7);
-      sug.classList.remove('hidden');
-      sug.innerHTML = `<span class="ic-emoji">💡</span><div class="ic-body"><h3>You could save about ${fmtMoney(suggested)} this month</h3><p>At your current spending pace, ${fmtMoney(projectedSurplus)} of allowance will be unused. Set some aside before it disappears.</p></div>`;
-    } else if (allowance > 0 && monthTotal === 0 && elapsed > 5) {
-      const suggested = Math.round(allowance * 0.10);
-      sug.classList.remove('hidden');
-      sug.innerHTML = `<span class="ic-emoji">🐷</span><div class="ic-body"><h3>Try saving ${fmtMoney(suggested)} this month</h3><p>That's just 10% of your allowance. Even small amounts compound over time.</p></div>`;
-    } else {
-      sug.classList.add('hidden');
-    }
-
-    // Goal list
-    const list = $('#goal-list');
-    list.innerHTML = '';
-    if (state.goals.length === 0) {
-      list.innerHTML = `<li class="empty">No goals yet. Tap “+ Add goal” to create one.</li>`;
-      return;
-    }
-    state.goals.forEach(g => {
-      const goalAll = savingsForGoal(g.id);
-      const goalAllTotal = sumNet(goalAll);
-      const goalMonth = goalAll.filter(s => s.date && s.date.startsWith(k));
-      const goalMonthTotal = sumNet(goalMonth);
-      const expanded = state.expandedGoal === g.id;
-
-      const targetPct = g.target > 0 ? Math.min(100, (goalAllTotal / g.target) * 100) : null;
-      const monthlyPct = g.monthlyTarget > 0 ? Math.min(100, (goalMonthTotal / g.monthlyTarget) * 100) : null;
-
-      const li = document.createElement('li');
-      li.className = 'goal-row' + (expanded ? ' expanded' : '');
-      li.innerHTML = `
-        <div class="goal-head">
-          <div class="cat-dot" style="background:${g.color}22;color:${g.color}">${g.emoji || '•'}</div>
-          <div class="goal-info">
-            <div class="goal-name">${escapeHtml(g.name)}</div>
-            <div class="muted small">
-              ${g.monthlyTarget > 0
-                ? `${fmtMoney(goalMonthTotal)} / ${fmtMoney(g.monthlyTarget)} this month`
-                : (goalMonthTotal > 0 ? `${fmtMoney(goalMonthTotal)} saved this month` : 'No savings yet')}
-            </div>
-          </div>
-          <div class="goal-amt">${fmtMoney(goalAllTotal)}</div>
-        </div>
-        ${monthlyPct !== null ? `
-          <div class="goal-bar"><div class="goal-bar-fill" style="width:${monthlyPct}%;background:${g.color}"></div></div>
-        ` : ''}
-        ${targetPct !== null ? `
-          <div class="muted small goal-target-meta">${Math.round(targetPct)}% of ${fmtMoney(g.target)} goal</div>
-        ` : ''}
-      `;
-      li.addEventListener('click', () => {
-        state.expandedGoal = expanded ? null : g.id;
-        renderSavings();
-      });
-      list.appendChild(li);
-
-      if (expanded) {
-        const recent = goalAll.slice().sort((a, b) =>
-          (b.date || '').localeCompare(a.date || '') || (b.createdAt - a.createdAt)
-        );
-        const expander = document.createElement('div');
-        expander.className = 'goal-expand';
-        expander.innerHTML = `
-          <div class="goal-expand-actions">
-            <button class="ghost-btn" data-act="edit">Edit goal</button>
-            <button class="ghost-btn" data-act="add">+ Deposit</button>
-            <button class="ghost-btn withdraw" data-act="withdraw">− Withdraw</button>
-          </div>
-          ${recent.length === 0
-            ? '<div class="muted small" style="padding:8px 4px">No entries yet. Tap to edit any entry below to update or delete it.</div>'
-            : '<div class="muted small" style="padding:8px 4px 4px">Entries · tap to edit</div>' + recent.map(s => {
-                const isW = s.kind === 'withdraw';
-                const sign = isW ? '−' : '';
-                const cls = isW ? ' withdraw' : '';
-                const dateLabel = formatDateLabel(s.date || '');
-                const timeLabel = s.time ? ' · ' + formatTime(s.time) : '';
-                const noteLabel = s.note ? escapeHtml(s.note) : (isW ? 'Withdraw' : 'Deposit');
-                const srcLabel = s.source === 'allowance' ? ' · from allowance' : '';
-                return `<div class="sav-entry-row${cls}" data-id="${s.id}">
-                  <div class="sav-entry-info">
-                    <div class="sav-entry-title">${noteLabel}</div>
-                    <div class="muted small">${dateLabel}${timeLabel}${srcLabel}</div>
-                  </div>
-                  <div class="sav-entry-amt">${sign}${fmtMoney(s.amount)}</div>
-                </div>`;
-              }).join('')
-          }
-        `;
-        expander.addEventListener('click', (ev) => ev.stopPropagation());
-        expander.querySelector('[data-act="edit"]').addEventListener('click', () => openGoalSheet({ mode: 'edit', goal: g }));
-        expander.querySelector('[data-act="add"]').addEventListener('click', () => openSavingsSheet({ mode: 'create', goalId: g.id }));
-        expander.querySelector('[data-act="withdraw"]').addEventListener('click', () => openSavingsSheet({ mode: 'create', goalId: g.id, kind: 'withdraw' }));
-        $$('.sav-entry-row', expander).forEach(row => {
-          row.addEventListener('click', () => {
-            const id = row.dataset.id;
-            const entry = state.savings.find(x => x.id === id);
-            if (entry) openSavingsSheet({ mode: 'edit', entry });
-          });
-        });
-        list.appendChild(expander);
-      }
-    });
-  }
-
-  // ---- Savings entry sheet ----
-  function openSavingsSheet({ mode, entry = null, goalId = null, kind = null }) {
-    state.savSheet.mode = mode;
-    state.savSheet.entry = entry;
-    state.savSheet.goalId = entry?.goalId || goalId || state.goals[0]?.id || null;
-    state.savSheet.source = entry?.source || 'extra';
-    state.savSheet.kind = entry?.kind || kind || 'deposit';
-
-    $('#sav-sheet').classList.remove('hidden');
-    $('#sav-sheet-title').textContent = mode === 'edit' ? 'Edit savings' : 'Add savings';
-    const isW = state.savSheet.kind === 'withdraw';
-    $('#sav-sheet-save').textContent = mode === 'edit' ? 'Save' : (isW ? 'Withdraw' : 'Add');
-    $('#sav-prefix').textContent = symbol();
-    $('#sav-amount').value = entry?.amount || '';
-    $('#sav-note').value = entry?.note || '';
-    $('#sav-date').value = entry?.date || todayISO();
-    $('#sav-time').value = entry?.time || nowTime();
-    $('#sav-delete').classList.toggle('hidden', mode !== 'edit');
-    renderSavSheetGoals();
-    renderSavSheetSource();
-    renderSavSheetKind();
-    setTimeout(() => $('#sav-amount').focus(), 100);
-  }
-
-  function renderSavSheetSource() {
-    $$('.sav-source-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.source === state.savSheet.source);
-    });
-    const hint = $('#sav-source-hint');
-    if (hint) {
-      const isW = state.savSheet.kind === 'withdraw';
-      const fromAllow = state.savSheet.source === 'allowance';
-      if (isW && fromAllow) hint.textContent = 'Returns to your monthly remaining (frees up budget).';
-      else if (isW && !fromAllow) hint.textContent = 'Cash out from savings — does not affect your allowance.';
-      else if (!isW && fromAllow) hint.textContent = 'This will be deducted from your monthly remaining.';
-      else hint.textContent = 'Tracked separately — does not affect your monthly allowance.';
-    }
-  }
-
-  function renderSavSheetKind() {
-    $$('.sav-kind-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.kind === state.savSheet.kind);
-    });
-    const isW = state.savSheet.kind === 'withdraw';
-    $('#sav-sheet').classList.toggle('withdraw-mode', isW);
-    if (state.savSheet.mode !== 'edit') {
-      $('#sav-sheet-save').textContent = isW ? 'Withdraw' : 'Add';
-    }
-    renderSavSheetSource();
-  }
-  function closeSavingsSheet() { $('#sav-sheet').classList.add('hidden'); }
-
-  function renderSavSheetGoals() {
-    const row = $('#sav-goals');
-    row.innerHTML = '';
-    state.goals.forEach(g => {
-      const card = document.createElement('button');
-      const selected = g.id === state.savSheet.goalId;
-      card.className = 'cat-card' + (selected ? ' selected' : '');
-      card.innerHTML = `
-        <span class="ic" style="color:${g.color}">${g.emoji || '•'}</span>
-        <span class="nm">${escapeHtml(g.name)}</span>
-      `;
-      card.addEventListener('click', () => {
-        state.savSheet.goalId = g.id;
-        renderSavSheetGoals();
-      });
-      row.appendChild(card);
-    });
-  }
-
-  async function saveSaving() {
-    const amt = parseFloat($('#sav-amount').value);
-    if (!amt || amt <= 0) return toast('Enter an amount');
-    if (!state.savSheet.goalId) return toast('Pick a goal');
-
-    const e = state.savSheet.entry || { id: uid(), createdAt: Date.now() };
-    e.amount = amt;
-    e.goalId = state.savSheet.goalId;
-    e.source = state.savSheet.source || 'extra';
-    e.kind = state.savSheet.kind || 'deposit';
-    e.note = $('#sav-note').value.trim();
-    e.date = $('#sav-date').value || todayISO();
-    e.time = $('#sav-time').value || nowTime();
-
-    await dbPut('savingsEntries', e);
-    if (state.savSheet.mode === 'edit') {
-      const idx = state.savings.findIndex(x => x.id === e.id);
-      if (idx >= 0) state.savings[idx] = e;
-    } else {
-      state.savings.push(e);
-    }
-    closeSavingsSheet();
-    renderAll();
-    const goalName = state.goals.find(g => g.id === e.goalId)?.name || 'goal';
-    const verb = e.kind === 'withdraw' ? 'Withdrew from' : 'Saved to';
-    toast(state.savSheet.mode === 'edit' ? 'Updated' : `${verb} ${goalName}`);
-  }
-
-  async function deleteSaving() {
-    if (!state.savSheet.entry) return;
-    if (!confirm('Delete this savings entry?')) return;
-    await dbDel('savingsEntries', state.savSheet.entry.id);
-    state.savings = state.savings.filter(x => x.id !== state.savSheet.entry.id);
-    closeSavingsSheet();
-    renderAll();
-    toast('Deleted');
-  }
-
-  // ---- Goal editor sheet ----
-  function openGoalSheet({ mode, goal = null }) {
-    state.goalSheet.mode = mode;
-    state.goalSheet.goal = goal ? JSON.parse(JSON.stringify(goal)) : {
-      id: uid(),
-      name: '',
-      emoji: '💰',
-      color: COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)],
-      monthlyTarget: 0,
-      target: 0,
-    };
-    $('#goal-sheet').classList.remove('hidden');
-    $('#goal-sheet-title').textContent = mode === 'edit' ? 'Edit goal' : 'New goal';
-    $('#goal-name').value = state.goalSheet.goal.name;
-    $('#goal-emoji').value = state.goalSheet.goal.emoji;
-    $('#goal-monthly').value = state.goalSheet.goal.monthlyTarget || '';
-    $('#goal-target').value = state.goalSheet.goal.target || '';
-    $('#goal-prefix-1').textContent = symbol();
-    $('#goal-prefix-2').textContent = symbol();
-    $('#goal-edit-delete').classList.toggle('hidden', mode !== 'edit');
-    renderGoalColors();
-  }
-  function closeGoalSheet() { $('#goal-sheet').classList.add('hidden'); }
-
-  function renderGoalColors() {
-    const row = $('#goal-colors');
-    row.innerHTML = '';
-    COLOR_PALETTE.forEach(col => {
-      const sw = document.createElement('button');
-      sw.className = 'color-swatch' + (col === state.goalSheet.goal.color ? ' selected' : '');
-      sw.style.background = col;
-      sw.addEventListener('click', () => {
-        state.goalSheet.goal.color = col;
-        renderGoalColors();
-      });
-      row.appendChild(sw);
-    });
-  }
-
-  async function saveGoal() {
-    const name = $('#goal-name').value.trim();
-    const emoji = $('#goal-emoji').value.trim() || '💰';
-    if (!name) return toast('Enter a name');
-    state.goalSheet.goal.name = name;
-    state.goalSheet.goal.emoji = emoji;
-    state.goalSheet.goal.monthlyTarget = parseFloat($('#goal-monthly').value) || 0;
-    state.goalSheet.goal.target = parseFloat($('#goal-target').value) || 0;
-    await dbPut('savingsGoals', state.goalSheet.goal);
-    if (state.goalSheet.mode === 'edit') {
-      const idx = state.goals.findIndex(g => g.id === state.goalSheet.goal.id);
-      if (idx >= 0) state.goals[idx] = state.goalSheet.goal;
-    } else {
-      state.goals.push(state.goalSheet.goal);
-    }
-    closeGoalSheet();
-    renderAll();
-    toast('Saved');
-  }
-
-  async function deleteGoal() {
-    if (state.goalSheet.mode !== 'edit') return;
-    const id = state.goalSheet.goal.id;
-    const used = state.savings.some(s => s.goalId === id);
-    const msg = used
-      ? 'This goal has savings linked to it. Delete goal and ALL its entries?'
-      : 'Delete this goal?';
-    if (!confirm(msg)) return;
-    await dbDel('savingsGoals', id);
-    state.goals = state.goals.filter(g => g.id !== id);
-    if (used) {
-      const toRemove = state.savings.filter(s => s.goalId === id);
-      for (const s of toRemove) await dbDel('savingsEntries', s.id);
-      state.savings = state.savings.filter(s => s.goalId !== id);
-    }
-    closeGoalSheet();
     renderAll();
     toast('Deleted');
   }
